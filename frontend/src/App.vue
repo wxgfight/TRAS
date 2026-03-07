@@ -1,0 +1,1563 @@
+<template>
+  <div id="app">
+    <el-container v-if="isLoggedIn">
+      <el-header>
+        <div class="header-content">
+          <h1>数据分析管理系统</h1>
+          <div class="user-info">
+            <span>{{ user.username }}</span>
+            <el-button type="primary" @click="logout">退出登录</el-button>
+          </div>
+        </div>
+      </el-header>
+      <el-container>
+        <el-aside width="200px">
+          <el-menu
+            :default-active="activeMenu"
+            class="el-menu-vertical-demo"
+            @select="handleMenuSelect"
+          >
+            <el-menu-item index="upload">
+              <el-icon><upload-filled /></el-icon>
+              <span>数据上传</span>
+            </el-menu-item>
+            <el-menu-item index="data">
+              <el-icon><document /></el-icon>
+              <span>数据管理</span>
+            </el-menu-item>
+            <el-menu-item index="visualization">
+              <el-icon><pie-chart /></el-icon>
+              <span>数据可视化</span>
+            </el-menu-item>
+            <el-menu-item index="report">
+              <el-icon><printer /></el-icon>
+              <span>报表生成</span>
+            </el-menu-item>
+            <el-menu-item index="compare">
+              <el-icon><document /></el-icon>
+              <span>文件对比</span>
+            </el-menu-item>
+            <el-menu-item index="history">
+              <el-icon><document /></el-icon>
+              <span>历史记录</span>
+            </el-menu-item>
+            <el-menu-item index="dashboard">
+              <el-icon><pie-chart /></el-icon>
+              <span>数据看板</span>
+            </el-menu-item>
+          </el-menu>
+        </el-aside>
+        <el-main>
+          <div v-if="activeMenu === 'upload'">
+            <h2>数据上传</h2>
+            <el-upload
+              ref="uploadRef"
+              class="upload-demo"
+              action="http://localhost:5000/api/data/upload"
+              :headers="{ 'x-auth-token': token }"
+              :data="{ headerRow: uploadHeaderRow, password: uploadPassword }"
+              :on-success="handleUploadSuccess"
+              :on-error="handleUploadError"
+              :auto-upload="false"
+              :file-list="fileList"
+              :limit="1"
+              accept=".csv,.xlsx,.xls,.json,.txt"
+            >
+              <el-button type="primary">选择文件</el-button>
+              <template #tip>
+                <div class="el-upload__tip">
+                  支持上传 CSV、Excel、JSON、TXT 文件，最大 50MB
+                </div>
+              </template>
+            </el-upload>
+            <div style="margin-top: 15px; margin-bottom: 15px;">
+              <span style="margin-right: 10px;">表头行位置:</span>
+              <el-input-number v-model="uploadHeaderRow" :min="0" :max="10" placeholder="默认0"></el-input-number>
+              <span style="margin-left: 10px; color: #909399; font-size: 12px;">(0表示第一行)</span>
+            </div>
+            <div style="margin-top: 15px; margin-bottom: 15px;">
+              <span style="margin-right: 10px;">Excel密码:</span>
+              <el-input v-model="uploadPassword" placeholder="若文件加密请填写" style="width: 200px;" show-password></el-input>
+              <span style="margin-left: 10px; color: #909399; font-size: 12px;">(可选)</span>
+            </div>
+            <el-button type="success" @click="submitUpload">
+              开始上传
+            </el-button>
+          </div>
+          <div v-else-if="activeMenu === 'data'">
+            <h2>数据管理</h2>
+            <el-table :data="dataList" style="width: 100%">
+              <el-table-column prop="originalname" label="文件名" width="300"></el-table-column>
+              <el-table-column prop="type" label="文件类型"></el-table-column>
+              <el-table-column prop="size" label="文件大小" :formatter="formatSize"></el-table-column>
+              <el-table-column prop="createdAt" label="上传时间" :formatter="formatDate"></el-table-column>
+              <el-table-column label="加密" width="80" align="center">
+                <template #default="scope">
+                  <el-tag type="danger" size="small" v-if="isEncrypted(scope.row)">是</el-tag>
+                  <el-tag type="info" size="small" v-else>否</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="250">
+                <template #default="scope">
+                  <el-button type="primary" size="small" @click="previewFile(scope.row)" v-if="scope.row.originalname.endsWith('.xlsx') || scope.row.originalname.endsWith('.xls')">预览</el-button>
+                  <el-button type="success" size="small" @click="downloadFile(scope.row)">下载</el-button>
+                  <el-button type="danger" size="small" @click="deleteData(scope.row._id)">
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            
+            <!-- 预览对话框 -->
+            <el-dialog v-model="previewDialogVisible" title="文件预览" width="80%">
+              <div v-if="previewData">
+                <div style="margin-bottom: 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 20px; background-color: #f5f7fa; padding: 10px; border-radius: 4px;">
+                  <div>文件名: <strong>{{ previewData.filename }}</strong></div>
+                  
+                  <div style="display: flex; align-items: center;" v-if="previewData.sheets && previewData.sheets.length > 0">
+                    <span style="margin-right: 5px;">Sheet:</span>
+                    <el-select v-model="previewParams.sheet" placeholder="选择Sheet" @change="handlePreviewParamsChange" size="small" style="width: 150px;">
+                      <el-option v-for="sheet in previewData.sheets" :key="sheet" :label="sheet" :value="sheet"></el-option>
+                    </el-select>
+                  </div>
+
+                  <div style="display: flex; align-items: center;">
+                    <span style="margin-right: 5px;">表头行:</span>
+                    <el-input-number v-model="previewParams.headerRow" :min="0" :max="10" size="small" @change="handlePreviewParamsChange" style="width: 100px;"></el-input-number>
+                  </div>
+                  
+                  <div style="display: flex; align-items: center;">
+                    <span style="margin-right: 5px;">显示行数:</span>
+                    <el-select v-model="previewParams.limit" placeholder="行数" @change="handlePreviewParamsChange" size="small" style="width: 80px;">
+                      <el-option label="30" :value="30"></el-option>
+                      <el-option label="50" :value="50"></el-option>
+                      <el-option label="100" :value="100"></el-option>
+                    </el-select>
+                  </div>
+                  
+                  <div style="display: flex; align-items: center;" v-if="previewNeedPassword">
+                    <span style="margin-right: 5px; color: red;">需密码:</span>
+                    <el-input v-model="previewParams.password" type="password" placeholder="输入密码" size="small" style="width: 120px;" @keyup.enter="handlePreviewParamsChange"></el-input>
+                    <el-button type="primary" size="small" @click="handlePreviewParamsChange" style="margin-left: 5px;">确认</el-button>
+                  </div>
+
+                  <div>Sheet数: {{ previewData.sheetCount || 1 }}</div>
+                  <div>总行数: {{ previewData.totalRows }}</div>
+                </div>
+                <el-table :data="previewData.preview" height="500" border v-loading="previewLoading">
+                  <el-table-column 
+                    v-for="(value, key) in (previewData.preview[0] || {})" 
+                    :key="key" 
+                    :prop="key" 
+                    :label="key"
+                    min-width="150"
+                  ></el-table-column>
+                </el-table>
+              </div>
+              <div v-else v-loading="previewLoading" style="height: 200px; display: flex; justify-content: center; align-items: center;">
+                <span v-if="!previewLoading">暂无预览数据</span>
+              </div>
+            </el-dialog>
+          </div>
+          <div v-else-if="activeMenu === 'visualization'">
+            <h2>数据可视化</h2>
+            <div ref="chartContainer" style="width: 100%; height: 400px;"></div>
+          </div>
+          <div v-else-if="activeMenu === 'report'">
+            <h2>报表生成</h2>
+            <el-form :model="reportForm" label-width="80px">
+              <el-form-item label="报表名称">
+                <el-input v-model="reportForm.name"></el-input>
+              </el-form-item>
+              <el-form-item label="报表类型">
+                <el-select v-model="reportForm.type">
+                  <el-option label="柱状图" value="bar"></el-option>
+                  <el-option label="折线图" value="line"></el-option>
+                  <el-option label="饼图" value="pie"></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="generateReport">生成报表</el-button>
+                <el-button @click="exportReport">导出报表</el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+          <div v-else-if="activeMenu === 'compare'">
+            <h2>文件对比</h2>
+            <el-form :model="compareForm" label-width="100px">
+              <el-form-item label="第一个文件">
+                <el-select v-model="compareForm.file1Id" @change="handleFile1Change" :placeholder="excelFiles.length > 0 ? '请选择文件' : '暂无Excel文件，请先上传'">
+                  <el-option 
+                    v-for="file in excelFiles" 
+                    :key="file._id" 
+                    :label="file.originalname" 
+                    :value="file._id"
+                  ></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="第一个文件Sheet">
+                <el-select v-model="compareForm.sheet1" @change="handleSheet1Change">
+                  <el-option 
+                    v-for="sheet in sheets1" 
+                    :key="sheet" 
+                    :label="sheet" 
+                    :value="sheet"
+                  ></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="第二个文件">
+                <el-select v-model="compareForm.file2Id" @change="handleFile2Change" :placeholder="excelFiles.length > 0 ? '请选择文件' : '暂无Excel文件，请先上传'">
+                  <el-option 
+                    v-for="file in excelFiles" 
+                    :key="file._id" 
+                    :label="file.originalname" 
+                    :value="file._id"
+                  ></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="第二个文件Sheet">
+                <el-select v-model="compareForm.sheet2">
+                  <el-option 
+                    v-for="sheet in sheets2" 
+                    :key="sheet" 
+                    :label="sheet" 
+                    :value="sheet"
+                  ></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="主键列">
+                <el-select v-model="compareForm.primaryKeys" multiple placeholder="选择主键列">
+                  <el-option 
+                    v-for="column in columns1" 
+                    :key="column" 
+                    :label="column" 
+                    :value="column"
+                  ></el-option>
+                </el-select>
+                <div style="margin-top: 5px; font-size: 12px; color: #606266;">
+                  支持多列组合主键
+                </div>
+              </el-form-item>
+              <el-form-item label="忽略列">
+                <el-select v-model="compareForm.ignoreColumns" multiple placeholder="选择忽略列">
+                  <el-option 
+                    v-for="column in columns1" 
+                    :key="column" 
+                    :label="column" 
+                    :value="column"
+                  ></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="表头行位置">
+                <el-input-number v-model="compareForm.headerRow" :min="0" :max="10"></el-input-number>
+              </el-form-item>
+              <el-form-item label="空值处理策略">
+                <el-select v-model="compareForm.nullValueStrategy">
+                  <el-option label="忽略" value="ignore"></el-option>
+                  <el-option label="视为空字符串" value="treat_as_empty"></el-option>
+                  <el-option label="视为0" value="treat_as_zero"></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="检测移动记录">
+                <el-switch v-model="compareForm.detectMoved"></el-switch>
+                <div style="margin-top: 5px; font-size: 12px; color: #606266;">
+                  检测位置变化但内容不变的记录
+                </div>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="compareFiles">开始对比</el-button>
+              </el-form-item>
+            </el-form>
+            <div v-if="comparisonResult" style="margin-top: 20px;">
+              <h3>对比结果</h3>
+              <p>文件1: {{ comparisonResult.file1 }}</p>
+              <p>文件2: {{ comparisonResult.file2 }}</p>
+              <p>Sheet1: {{ comparisonResult.sheet1 }}</p>
+              <p>Sheet2: {{ comparisonResult.sheet2 }}</p>
+              <p>使用的主键: {{ comparisonResult.primaryKeys.join(', ') }}</p>
+              <p>推荐的主键: {{ comparisonResult.recommendedPrimaryKeys.join(', ') }}</p>
+              <p>忽略的列: {{ comparisonResult.ignoreColumns.join(', ') || '无' }}</p>
+              <p>空值处理策略: {{ comparisonResult.nullValueStrategy }}</p>
+              <p>检测移动记录: {{ comparisonResult.detectMoved ? '是' : '否' }}</p>
+              
+              <h4 style="margin-top: 20px;">差异详情</h4>
+              <el-table :data="comparisonResult.differences" style="width: 100%; margin-top: 10px;">
+                <el-table-column prop="type" label="差异类型" :formatter="formatDifferenceType"></el-table-column>
+                <el-table-column prop="file" label="文件"></el-table-column>
+                <el-table-column label="行索引">
+                  <template #default="scope">
+                    <span v-if="scope.row.type === 'modified'">
+                      {{ scope.row.rowIndex1 }} → {{ scope.row.rowIndex2 }}
+                    </span>
+                    <span v-else-if="scope.row.type === 'moved'">
+                      {{ scope.row.oldIndex }} → {{ scope.row.newIndex }}
+                    </span>
+                    <span v-else>
+                      {{ scope.row.rowIndex }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="column" label="列"></el-table-column>
+                <el-table-column prop="oldValue" label="旧值"></el-table-column>
+                <el-table-column prop="newValue" label="新值"></el-table-column>
+                <el-table-column label="变更详情">
+                  <template #default="scope">
+                    <div v-if="scope.row.type === 'modified' && scope.row.changes">
+                      <div v-for="(change, index) in scope.row.changes" :key="index">
+                        {{ change.column }}: {{ change.oldValue }} → {{ change.newValue }}
+                      </div>
+                    </div>
+                    <div v-else>
+                      {{ scope.row.rowData ? JSON.stringify(scope.row.rowData) : '' }}
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="primaryKey" label="主键值"></el-table-column>
+              </el-table>
+              <el-button type="success" style="margin-top: 10px;" @click="downloadReport(comparisonResult.taskId)">下载对比报告</el-button>
+            </div>
+          </div>
+          <div v-else-if="activeMenu === 'history'">
+            <h2>历史记录</h2>
+            <el-form :inline="true" :model="historyForm" style="margin-bottom: 20px;">
+              <el-form-item label="搜索">
+                <el-input v-model="historyForm.search" placeholder="文件名或任务ID"></el-input>
+              </el-form-item>
+              <el-form-item label="时间范围">
+                <el-date-picker v-model="historyForm.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期"></el-date-picker>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="fetchHistoryList">查询</el-button>
+                <el-button @click="resetHistoryForm">重置</el-button>
+              </el-form-item>
+            </el-form>
+            <el-table :data="historyList" style="width: 100%;">
+              <el-table-column prop="taskId" label="任务ID" width="180"></el-table-column>
+              <el-table-column prop="file1Id.originalname" label="文件1"></el-table-column>
+              <el-table-column prop="file2Id.originalname" label="文件2"></el-table-column>
+              <el-table-column prop="createdAt" label="对比时间" :formatter="formatDate" width="160"></el-table-column>
+              <el-table-column label="差异统计" width="200">
+                <template #default="scope">
+                  <div style="font-size: 12px;">
+                    <span style="color: #67C23A">新增: {{ scope.row.stats?.added || 0 }}</span> |
+                    <span style="color: #F56C6C">删除: {{ scope.row.stats?.deleted || 0 }}</span> |
+                    <span style="color: #E6A23C">修改: {{ scope.row.stats?.modified || 0 }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="status" label="状态" width="80">
+                 <template #default="scope">
+                   <el-tag :type="scope.row.status === 'completed' ? 'success' : 'info'">{{ scope.row.status === 'completed' ? '完成' : '进行中' }}</el-tag>
+                 </template>
+              </el-table-column>
+              <el-table-column label="操作" width="250">
+                <template #default="scope">
+                  <el-button type="primary" size="small" @click="downloadReport(scope.row.taskId)" v-if="scope.row.status === 'completed'">下载报表</el-button>
+                  <el-button size="small" @click="rerunComparison(scope.row._id)">重新对比</el-button>
+                  <el-button type="danger" size="small" @click="deleteHistory(scope.row._id)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-pagination
+              v-model:current-page="historyPage"
+              v-model:page-size="historyLimit"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="historyTotal"
+              @size-change="handleSizeChange"
+              @current-change="handleCurrentChange"
+              style="margin-top: 20px;"
+            ></el-pagination>
+          </div>
+          <div v-else-if="activeMenu === 'dashboard'">
+            <h2>数据看板</h2>
+            <div class="dashboard-cards" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px;">
+              <el-card shadow="hover">
+                <template #header>
+                  <div class="card-header">
+                    <span>总文件数</span>
+                  </div>
+                </template>
+                <div class="card-content">
+                  <el-statistic :value="dashboardStats.totalFiles" :precision="0"></el-statistic>
+                </div>
+              </el-card>
+              <el-card shadow="hover">
+                <template #header>
+                  <div class="card-header">
+                    <span>总对比任务数</span>
+                  </div>
+                </template>
+                <div class="card-content">
+                  <el-statistic :value="dashboardStats.totalComparisons" :precision="0"></el-statistic>
+                </div>
+              </el-card>
+              <el-card shadow="hover">
+                <template #header>
+                  <div class="card-header">
+                    <span>今日任务数</span>
+                  </div>
+                </template>
+                <div class="card-content">
+                  <el-statistic :value="dashboardStats.todayComparisons" :precision="0"></el-statistic>
+                </div>
+              </el-card>
+              <el-card shadow="hover">
+                <template #header>
+                  <div class="card-header">
+                    <span>近7天任务趋势</span>
+                  </div>
+                </template>
+                <div class="card-content">
+                  <div ref="trendChart" style="width: 100%; height: 150px;"></div>
+                </div>
+              </el-card>
+            </div>
+            <div class="dashboard-charts" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+              <el-card shadow="hover">
+                <template #header>
+                  <div class="card-header">
+                    <span>差异类型分布</span>
+                  </div>
+                </template>
+                <div class="card-content">
+                  <div ref="distributionChart" style="width: 100%; height: 300px;"></div>
+                </div>
+              </el-card>
+              <el-card shadow="hover">
+                <template #header>
+                  <div class="card-header">
+                    <span>任务时间趋势</span>
+                  </div>
+                </template>
+                <div class="card-content">
+                  <div ref="timeChart" style="width: 100%; height: 300px;"></div>
+                </div>
+              </el-card>
+            </div>
+          </div>
+        </el-main>
+      </el-container>
+    </el-container>
+    <div v-else class="login-register">
+      <el-tabs v-model="activeTab">
+        <el-tab-pane label="登录" name="login">
+          <el-form :model="loginForm" label-width="80px">
+            <el-form-item label="邮箱">
+              <el-input v-model="loginForm.email"></el-input>
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input v-model="loginForm.password" type="password"></el-input>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="login">登录</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane label="注册" name="register">
+          <el-form :model="registerForm" label-width="80px">
+            <el-form-item label="用户名">
+              <el-input v-model="registerForm.username"></el-input>
+            </el-form-item>
+            <el-form-item label="邮箱">
+              <el-input v-model="registerForm.email"></el-input>
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input v-model="registerForm.password" type="password"></el-input>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="register">注册</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, onMounted, computed, nextTick } from 'vue'
+import axios from 'axios'
+import { UploadFilled, Document, PieChart, Printer } from '@element-plus/icons-vue'
+
+export default {
+  name: 'App',
+  components: {
+    UploadFilled,
+    Document,
+    PieChart,
+    Printer
+  },
+  setup() {
+    const isLoggedIn = ref(false)
+    const user = ref({})
+    const token = ref('')
+    const activeMenu = ref('upload')
+    const activeTab = ref('login')
+    const fileList = ref([])
+    const dataList = ref([])
+    const excelFiles = computed(() => {
+      return dataList.value.filter(file => 
+        file.originalname.endsWith('.xlsx') || file.originalname.endsWith('.xls')
+      )
+    })
+    const chartContainer = ref(null)
+    const chart = ref(null)
+    const uploadRef = ref(null)
+    const uploadHeaderRow = ref(0)
+    const uploadPassword = ref('')
+    
+    const loginForm = ref({
+      email: '',
+      password: ''
+    })
+    
+    const registerForm = ref({
+      username: '',
+      email: '',
+      password: ''
+    })
+    
+    const reportForm = ref({
+      name: '',
+      type: 'bar'
+    })
+    
+    const compareForm = ref({
+      file1Id: '',
+      file2Id: '',
+      sheet1: '',
+      sheet2: '',
+      primaryKeys: [],
+      ignoreColumns: [],
+      headerRow: 0,
+      nullValueStrategy: 'ignore',
+      detectMoved: false,
+      file1Password: '',
+      file2Password: ''
+    })
+    
+    const sheets1 = ref([])
+    const sheets2 = ref([])
+    const columns1 = ref([])
+    const columns2 = ref([])
+    const comparisonResult = ref(null)
+    const previewDialogVisible = ref(false)
+    const previewData = ref(null)
+    const previewLoading = ref(false)
+    const currentPreviewFileId = ref('')
+    const previewNeedPassword = ref(false)
+    const previewParams = ref({
+      sheet: '',
+      headerRow: 0,
+      limit: 30,
+      password: ''
+    })
+    
+    // 历史记录相关
+    const historyForm = ref({
+      search: '',
+      dateRange: []
+    })
+    const historyList = ref([])
+    const historyTotal = ref(0)
+    const historyPage = ref(1)
+    const historyLimit = ref(10)
+    
+    // 数据看板相关
+    const dashboardStats = ref({
+      totalFiles: 0,
+      totalComparisons: 0,
+      todayComparisons: 0,
+      last7Days: [],
+      differenceDistribution: {
+        added: 0,
+        deleted: 0,
+        modified: 0
+      }
+    })
+    const trendChart = ref(null)
+    const distributionChart = ref(null)
+    const timeChart = ref(null)
+    
+    // 检查登录状态
+    const checkLoginStatus = () => {
+      const storedToken = localStorage.getItem('token')
+      const storedUser = localStorage.getItem('user')
+      
+      if (storedToken && storedUser) {
+        token.value = storedToken
+        user.value = JSON.parse(storedUser)
+        isLoggedIn.value = true
+        fetchDataList()
+      }
+    }
+    
+    // 登录
+    const login = async () => {
+      try {
+        const response = await axios.post('http://localhost:5000/api/auth/login', loginForm.value)
+        localStorage.setItem('token', response.data.token)
+        localStorage.setItem('user', JSON.stringify(response.data.user))
+        token.value = response.data.token
+        user.value = response.data.user
+        isLoggedIn.value = true
+        fetchDataList()
+      } catch (error) {
+        console.error('登录错误:', error)
+        alert('登录失败: ' + (error.response?.data?.msg || '服务器错误'))
+      }
+    }
+    
+    // 注册
+    const register = async () => {
+      try {
+        const response = await axios.post('http://localhost:5000/api/auth/register', registerForm.value)
+        localStorage.setItem('token', response.data.token)
+        localStorage.setItem('user', JSON.stringify(response.data.user))
+        token.value = response.data.token
+        user.value = response.data.user
+        isLoggedIn.value = true
+        fetchDataList()
+      } catch (error) {
+        console.error('注册错误:', error)
+        alert('注册失败: ' + (error.response?.data?.msg || '服务器错误'))
+      }
+    }
+    
+    // 退出登录
+    const logout = () => {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      isLoggedIn.value = false
+      user.value = {}
+      token.value = ''
+    }
+    
+    // 处理菜单选择
+    const handleMenuSelect = (key) => {
+      activeMenu.value = key
+      if (key === 'visualization') {
+        console.log('切换到数据可视化模块')
+        fetchDataList().then(() => {
+          // 使用 setTimeout 确保 DOM 更新完成
+          setTimeout(() => {
+            initChart()
+          }, 300)
+        })
+      } else if (key === 'compare') {
+        // 切换到对比页面时，确保重新获取数据列表
+        fetchDataList()
+      } else if (key === 'history') {
+        fetchHistoryList()
+      } else if (key === 'dashboard') {
+        fetchDashboardStats()
+      }
+    }
+    
+    // 处理文件上传成功
+    const handleUploadSuccess = (response) => {
+      alert('上传成功')
+      fileList.value = []
+      uploadPassword.value = '' // 清空密码
+      fetchDataList()
+    }
+    
+    // 处理文件上传失败
+    const handleUploadError = (error) => {
+      console.error('上传失败:', error)
+      let errorMessage = '上传失败: '
+      if (error.response && error.response.data && error.response.data.msg) {
+        errorMessage += error.response.data.msg
+      } else if (error.message) {
+        errorMessage += error.message
+      } else if (error.status) {
+        errorMessage += '状态码: ' + error.status
+      } else {
+        errorMessage += '未知错误'
+      }
+      alert(errorMessage)
+    }
+    
+    // 提交上传
+    const submitUpload = () => {
+      if (!token.value) {
+        alert('请先登录')
+        return
+      }
+      if (uploadRef.value) {
+        uploadRef.value.submit()
+      }
+    }
+    
+    // 获取数据列表
+    const fetchDataList = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/data/list', {
+          headers: {
+            'x-auth-token': token.value
+          }
+        })
+        dataList.value = response.data
+      } catch (error) {
+        console.error('获取数据列表失败:', error)
+      }
+    }
+    
+    // 删除数据
+    const deleteData = async (id) => {
+      if (confirm('确定要删除这个文件吗？')) {
+        try {
+          console.log('删除文件ID:', id)
+          await axios.delete(`http://localhost:5000/api/data/${id}`, {
+            headers: {
+              'x-auth-token': token.value
+            }
+          })
+          fetchDataList()
+          alert('删除成功')
+        } catch (error) {
+          console.error('删除失败:', error)
+          alert('删除失败: ' + (error.response?.data?.msg || '服务器错误'))
+        }
+      }
+    }
+    
+    // 格式化文件大小
+    const formatSize = (row, column) => {
+      const size = row.size
+      if (size < 1024) {
+        return size + ' B'
+      } else if (size < 1024 * 1024) {
+        return (size / 1024).toFixed(2) + ' KB'
+      } else {
+        return (size / (1024 * 1024)).toFixed(2) + ' MB'
+      }
+    }
+    
+    // 格式化日期
+    const formatDate = (row, column) => {
+      const date = new Date(row.createdAt)
+      return date.toLocaleString()
+    }
+
+    const isEncrypted = (row) => {
+      return row.metadata && (row.metadata.encrypted || row.metadata.passwordProtected)
+    }
+    
+    // 初始化图表
+    const initChart = (retryCount = 0) => {
+      // 确保容器存在
+      if (!chartContainer.value) {
+        console.warn('chartContainer is null, retrying...', retryCount)
+        if (retryCount < 5) {
+          setTimeout(() => {
+            initChart(retryCount + 1)
+          }, 200)
+        } else {
+          console.error('Failed to get chartContainer after 5 retries')
+        }
+        return
+      }
+
+      console.log('chartContainer found:', chartContainer.value)
+      
+      // 销毁旧实例
+      if (chart.value) {
+        chart.value.dispose()
+        chart.value = null
+      }
+      
+      try {
+        chart.value = echarts.init(chartContainer.value)
+        
+        const option = {
+          title: {
+            text: '上传文件大小统计',
+            left: 'center'
+          },
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+              type: 'shadow'
+            }
+          },
+          grid: {
+            left: '3%',
+            right: '4%',
+            bottom: '3%',
+            containLabel: true
+          },
+          xAxis: [
+            {
+              type: 'category',
+              data: dataList.value.length > 0 
+                ? dataList.value.slice(0, 15).map(item => item.originalname.length > 10 ? item.originalname.substring(0, 10) + '...' : item.originalname) 
+                : ['示例A', '示例B', '示例C', '示例D', '示例E'],
+              axisTick: {
+                alignWithLabel: true
+              },
+              axisLabel: {
+                interval: 0,
+                rotate: 30
+              }
+            }
+          ],
+          yAxis: [
+            {
+              type: 'value',
+              name: '大小 (KB)'
+            }
+          ],
+          series: [
+            {
+              name: '文件大小',
+              type: 'bar',
+              barWidth: '60%',
+              data: dataList.value.length > 0 
+                ? dataList.value.slice(0, 15).map(item => (item.size / 1024).toFixed(2)) 
+                : [10, 52, 200, 334, 390],
+              itemStyle: {
+                color: '#409EFF'
+              }
+            }
+          ]
+        }
+
+        console.log('Setting chart option:', option)
+        chart.value.setOption(option)
+        
+        // 监听窗口大小变化
+        window.addEventListener('resize', () => {
+          if (chart.value) {
+            chart.value.resize()
+          }
+        })
+      } catch (error) {
+        console.error('图表初始化失败:', error)
+      }
+    }
+    
+    // 生成报表
+    const generateReport = () => {
+      alert('报表生成成功')
+    }
+    
+    // 导出报表
+    const exportReport = () => {
+      alert('报表导出成功')
+    }
+    
+    // 下载报表
+    const downloadReport = async (taskId) => {
+      try {
+        const response = await axios.get(`http://localhost:5000/api/compare/report/${taskId}`, {
+          headers: {
+            'x-auth-token': token.value
+          },
+          responseType: 'blob'
+        })
+        
+        // 创建下载链接
+        const url = window.URL.createObjectURL(new Blob([response.data]))
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', `report-${taskId}.xlsx`)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+      } catch (error) {
+        console.error('下载报表失败:', error)
+        alert('下载报表失败')
+      }
+    }
+    
+    // 预览文件
+    const previewFile = async (file) => {
+      previewDialogVisible.value = true
+      previewLoading.value = true
+      previewData.value = null
+      currentPreviewFileId.value = file._id
+      previewNeedPassword.value = false
+      
+      // 重置参数
+      previewParams.value = {
+        sheet: '',
+        headerRow: file.metadata?.headerRow || 0,
+        limit: 30,
+        password: ''
+      }
+      
+      await fetchPreviewData()
+    }
+
+    const fetchPreviewData = async () => {
+      if (!currentPreviewFileId.value) return
+      
+      previewLoading.value = true
+      try {
+        const params = {
+          headerRow: previewParams.value.headerRow,
+          limit: previewParams.value.limit
+        }
+        if (previewParams.value.sheet) {
+          params.sheet = previewParams.value.sheet
+        }
+        if (previewParams.value.password) {
+          params.password = previewParams.value.password
+        }
+
+        const response = await axios.get(`http://localhost:5000/api/data/preview/${currentPreviewFileId.value}`, {
+          headers: {
+            'x-auth-token': token.value
+          },
+          params
+        })
+        previewData.value = response.data
+        previewNeedPassword.value = false // 成功获取数据，说明不需要密码或密码正确
+        
+        // 如果当前没有选中Sheet，则选中返回的Sheet
+        if (!previewParams.value.sheet && response.data.sheet) {
+          previewParams.value.sheet = response.data.sheet
+        }
+      } catch (error) {
+        console.error('预览文件失败:', error)
+        if (error.response?.data?.needPassword) {
+          previewNeedPassword.value = true
+          // 提示用户输入密码
+          alert('该文件受密码保护，请输入密码')
+        } else if (error.response?.status === 400 && error.response?.data?.msg?.includes('密码')) {
+           previewNeedPassword.value = true
+           alert(error.response.data.msg)
+        } else {
+           alert('预览文件失败: ' + (error.response?.data?.msg || '服务器错误'))
+        }
+      } finally {
+        previewLoading.value = false
+      }
+    }
+
+    const handlePreviewParamsChange = () => {
+      fetchPreviewData()
+    }
+
+    // 下载文件
+    const downloadFile = async (file) => {
+      try {
+        const response = await axios.get(`http://localhost:5000/api/data/download/${file._id}`, {
+          headers: {
+            'x-auth-token': token.value
+          },
+          responseType: 'blob'
+        })
+        
+        // 创建下载链接
+        const url = window.URL.createObjectURL(new Blob([response.data]))
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', file.originalname)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+      } catch (error) {
+        console.error('下载文件失败:', error)
+        alert('下载文件失败')
+      }
+    }
+    
+    // 处理第一个文件选择
+    const handleFile1Change = async (fileId) => {
+      if (fileId) {
+        // 检查文件是否需要密码
+        const file = dataList.value.find(f => f._id === fileId)
+        compareForm.value.file1Password = '' // 重置密码
+        
+        // 尝试获取sheet列表，如果需要密码会失败
+        try {
+          await fetchSheets1(fileId)
+        } catch (error) {
+          // fetchSheets1 内部会处理密码提示
+        }
+      } else {
+        sheets1.value = []
+        compareForm.value.sheet1 = ''
+        columns1.value = []
+        compareForm.value.primaryKeys = []
+      }
+    }
+    
+    const fetchSheets1 = async (fileId) => {
+      try {
+        const params = {}
+        if (compareForm.value.file1Password) {
+          params.password = compareForm.value.file1Password
+        }
+        
+        const response = await axios.get(`http://localhost:5000/api/compare/sheets/${fileId}`, {
+          headers: {
+            'x-auth-token': token.value
+          },
+          params
+        })
+        sheets1.value = response.data.sheets
+        compareForm.value.sheet1 = response.data.sheets[0] || ''
+        // 获取列信息和推荐主键
+        if (compareForm.value.sheet1) {
+          await fetchColumns1(fileId, compareForm.value.sheet1)
+        }
+      } catch (error) {
+        console.error('获取Sheet列表失败:', error)
+        if (error.response?.data?.needPassword) {
+           const password = prompt('文件1受密码保护，请输入密码:')
+           if (password) {
+             compareForm.value.file1Password = password
+             await fetchSheets1(fileId)
+           } else {
+             // 用户取消输入密码，清除选择
+             compareForm.value.file1Id = ''
+             sheets1.value = []
+           }
+        } else {
+           alert('获取文件1信息失败: ' + (error.response?.data?.msg || '服务器错误'))
+        }
+      }
+    }
+
+    // 处理第二个文件选择
+    const handleFile2Change = async (fileId) => {
+      if (fileId) {
+        compareForm.value.file2Password = '' // 重置密码
+        try {
+          await fetchSheets2(fileId)
+        } catch (error) {
+          // fetchSheets2 内部会处理
+        }
+      } else {
+        sheets2.value = []
+        compareForm.value.sheet2 = ''
+        columns2.value = []
+      }
+    }
+    
+    const fetchSheets2 = async (fileId) => {
+      try {
+        const params = {}
+        if (compareForm.value.file2Password) {
+          params.password = compareForm.value.file2Password
+        }
+
+        const response = await axios.get(`http://localhost:5000/api/compare/sheets/${fileId}`, {
+          headers: {
+            'x-auth-token': token.value
+          },
+          params
+        })
+        sheets2.value = response.data.sheets
+        compareForm.value.sheet2 = response.data.sheets[0] || ''
+      } catch (error) {
+        console.error('获取Sheet列表失败:', error)
+        if (error.response?.data?.needPassword) {
+           const password = prompt('文件2受密码保护，请输入密码:')
+           if (password) {
+             compareForm.value.file2Password = password
+             await fetchSheets2(fileId)
+           } else {
+             compareForm.value.file2Id = ''
+             sheets2.value = []
+           }
+        } else {
+           alert('获取文件2信息失败: ' + (error.response?.data?.msg || '服务器错误'))
+        }
+      }
+    }
+    
+    // 处理第一个文件Sheet选择
+    const handleSheet1Change = async (sheet) => {
+      if (compareForm.value.file1Id && sheet) {
+        await fetchColumns1(compareForm.value.file1Id, sheet)
+      }
+    }
+    
+    // 获取第一个文件的列信息和推荐主键
+    const fetchColumns1 = async (fileId, sheet) => {
+      try {
+        const params = {}
+        if (compareForm.value.file1Password) {
+          params.password = compareForm.value.file1Password
+        }
+        
+        const response = await axios.get(`http://localhost:5000/api/compare/columns/${fileId}/${encodeURIComponent(sheet)}`, {
+          headers: {
+            'x-auth-token': token.value
+          },
+          params
+        })
+        columns1.value = response.data.columns
+        // 使用推荐的主键
+        compareForm.value.primaryKeys = response.data.recommendedPrimaryKeys
+      } catch (error) {
+        console.error('获取列信息失败:', error)
+        // 这里一般不需要再次处理密码，因为在获取Sheet时已经处理过了，除非Session过期等
+      }
+    }
+    
+    // 获取历史记录列表
+    const fetchHistoryList = async () => {
+      try {
+        const params = {
+          page: historyPage.value,
+          limit: historyLimit.value,
+          search: historyForm.value.search
+        }
+        
+        if (historyForm.value.dateRange && historyForm.value.dateRange.length === 2) {
+          params.startDate = historyForm.value.dateRange[0]
+          params.endDate = historyForm.value.dateRange[1]
+        }
+        
+        const response = await axios.get('http://localhost:5000/api/history/list', {
+          headers: {
+            'x-auth-token': token.value
+          },
+          params
+        })
+        
+        historyList.value = response.data.data
+        historyTotal.value = response.data.total
+      } catch (error) {
+        console.error('获取历史记录失败:', error)
+      }
+    }
+    
+    // 重置历史记录表单
+    const resetHistoryForm = () => {
+      historyForm.value = {
+        search: '',
+        dateRange: []
+      }
+      historyPage.value = 1
+      fetchHistoryList()
+    }
+    
+    // 查看历史记录
+    const viewHistory = async (id) => {
+      try {
+        const response = await axios.get(`http://localhost:5000/api/history/${id}`, {
+          headers: {
+            'x-auth-token': token.value
+          }
+        })
+        // 这里可以显示历史记录详情
+        console.log('历史记录详情:', response.data)
+      } catch (error) {
+        console.error('获取历史记录详情失败:', error)
+      }
+    }
+    
+    // 重新对比
+    const rerunComparison = async (id) => {
+      try {
+        const response = await axios.post(`http://localhost:5000/api/history/${id}/rerun`, {}, {
+          headers: {
+            'x-auth-token': token.value
+          }
+        })
+        alert(response.data.msg)
+        fetchHistoryList()
+      } catch (error) {
+        console.error('重新对比失败:', error)
+      }
+    }
+    
+    // 删除历史记录
+    const deleteHistory = async (id) => {
+      if (confirm('确定要删除这条历史记录吗？')) {
+        try {
+          await axios.delete(`http://localhost:5000/api/history/${id}`, {
+            headers: {
+              'x-auth-token': token.value
+            }
+          })
+          fetchHistoryList()
+          alert('删除成功')
+        } catch (error) {
+          console.error('删除历史记录失败:', error)
+        }
+      }
+    }
+    
+    // 处理分页大小变化
+    const handleSizeChange = (size) => {
+      historyLimit.value = size
+      fetchHistoryList()
+    }
+    
+    // 处理页码变化
+    const handleCurrentChange = (current) => {
+      historyPage.value = current
+      fetchHistoryList()
+    }
+    
+    // 获取数据看板数据
+    const fetchDashboardStats = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/dashboard/stats', {
+          headers: {
+            'x-auth-token': token.value
+          }
+        })
+        
+        if (response.data.user) {
+          // 管理员
+          dashboardStats.value = response.data.user
+        } else {
+          // 普通用户
+          dashboardStats.value = response.data
+        }
+        
+        // 初始化图表
+        initDashboardCharts()
+      } catch (error) {
+        console.error('获取仪表盘数据失败:', error)
+      }
+    }
+    
+    // 初始化数据看板图表
+    const initDashboardCharts = () => {
+      // 确保有数据，如果没有则使用默认数据防止空白
+      const safeStats = dashboardStats.value || {
+        last7Days: [],
+        differenceDistribution: { added: 0, deleted: 0, modified: 0 }
+      }
+      
+      // 趋势图
+      if (trendChart.value) {
+        if (echarts.getInstanceByDom(trendChart.value)) {
+          echarts.getInstanceByDom(trendChart.value).dispose()
+        }
+        const chart = echarts.init(trendChart.value)
+        const option = {
+          tooltip: {
+            trigger: 'axis'
+          },
+          grid: {
+            top: '10%',
+            left: '3%',
+            right: '4%',
+            bottom: '3%',
+            containLabel: true
+          },
+          xAxis: {
+            type: 'category',
+            data: safeStats.last7Days.length > 0 ? safeStats.last7Days.map(item => item.date) : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+          },
+          yAxis: {
+            type: 'value'
+          },
+          series: [{
+            data: safeStats.last7Days.length > 0 ? safeStats.last7Days.map(item => item.count) : [0, 0, 0, 0, 0, 0, 0],
+            type: 'line',
+            smooth: true,
+            areaStyle: {
+              opacity: 0.3
+            },
+            itemStyle: {
+              color: '#409EFF'
+            }
+          }]
+        }
+        chart.setOption(option)
+      }
+      
+      // 差异类型分布图
+      if (distributionChart.value) {
+        if (echarts.getInstanceByDom(distributionChart.value)) {
+          echarts.getInstanceByDom(distributionChart.value).dispose()
+        }
+        const chart = echarts.init(distributionChart.value)
+        const hasData = safeStats.differenceDistribution.added > 0 || 
+                        safeStats.differenceDistribution.deleted > 0 || 
+                        safeStats.differenceDistribution.modified > 0
+                        
+        const option = {
+          tooltip: {
+            trigger: 'item'
+          },
+          legend: {
+            top: '5%',
+            left: 'center'
+          },
+          series: [{
+            name: '差异类型',
+            type: 'pie',
+            radius: ['40%', '70%'],
+            avoidLabelOverlap: false,
+            itemStyle: {
+              borderRadius: 10,
+              borderColor: '#fff',
+              borderWidth: 2
+            },
+            label: {
+              show: false,
+              position: 'center'
+            },
+            emphasis: {
+              label: {
+                show: true,
+                fontSize: '18',
+                fontWeight: 'bold'
+              }
+            },
+            labelLine: {
+              show: false
+            },
+            data: hasData ? [
+              { value: safeStats.differenceDistribution.added, name: '新增', itemStyle: { color: '#67C23A' } },
+              { value: safeStats.differenceDistribution.deleted, name: '删除', itemStyle: { color: '#F56C6C' } },
+              { value: safeStats.differenceDistribution.modified, name: '修改', itemStyle: { color: '#E6A23C' } }
+            ] : [
+              { value: 1, name: '无数据', itemStyle: { color: '#909399' } }
+            ]
+          }]
+        }
+        chart.setOption(option)
+      }
+      
+      // 任务时间趋势图
+      if (timeChart.value) {
+        if (echarts.getInstanceByDom(timeChart.value)) {
+          echarts.getInstanceByDom(timeChart.value).dispose()
+        }
+        const chart = echarts.init(timeChart.value)
+        const option = {
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+              type: 'shadow'
+            }
+          },
+          grid: {
+            top: '10%',
+            left: '3%',
+            right: '4%',
+            bottom: '3%',
+            containLabel: true
+          },
+          xAxis: {
+            type: 'category',
+            data: safeStats.last7Days.length > 0 ? safeStats.last7Days.map(item => item.date) : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+          },
+          yAxis: {
+            type: 'value'
+          },
+          series: [{
+            data: safeStats.last7Days.length > 0 ? safeStats.last7Days.map(item => item.count) : [0, 0, 0, 0, 0, 0, 0],
+            type: 'bar',
+            barWidth: '40%',
+            itemStyle: {
+              color: '#409EFF',
+              borderRadius: [5, 5, 0, 0]
+            }
+          }]
+        }
+        chart.setOption(option)
+      }
+      
+      // 监听窗口大小变化
+      window.addEventListener('resize', () => {
+        [trendChart.value, distributionChart.value, timeChart.value].forEach(container => {
+          if (container) {
+            const instance = echarts.getInstanceByDom(container)
+            if (instance) instance.resize()
+          }
+        })
+      })
+    }
+    
+    // 对比文件
+    const compareFiles = async () => {
+      try {
+        const response = await axios.post('http://localhost:5000/api/compare/compare', compareForm.value, {
+          headers: {
+            'x-auth-token': token.value
+          }
+        })
+        comparisonResult.value = response.data
+      } catch (error) {
+        console.error('文件对比失败:', error)
+        if (error.response?.data?.needFile1Password) {
+           const password = prompt(`文件1 "${error.response.data.msg}" 受密码保护，请输入密码:`)
+           if (password) {
+             compareForm.value.file1Password = password
+             compareFiles() // 重试
+           }
+        } else if (error.response?.data?.needFile2Password) {
+           const password = prompt(`文件2 "${error.response.data.msg}" 受密码保护，请输入密码:`)
+           if (password) {
+             compareForm.value.file2Password = password
+             compareFiles() // 重试
+           }
+        } else {
+           alert('文件对比失败: ' + (error.response?.data?.msg || '服务器错误'))
+        }
+      }
+    }
+    
+    // 格式化行数据
+    const formatRowData = (row, column) => {
+      if (row.rowData) {
+        return JSON.stringify(row.rowData)
+      }
+      return ''
+    }
+    
+    // 格式化差异类型
+    const formatDifferenceType = (row, column) => {
+      const typeMap = {
+        'added': '新增',
+        'deleted': '删除',
+        'modified': '修改',
+        'moved': '移动'
+      }
+      return typeMap[row.type] || row.type
+    }
+    
+    onMounted(() => {
+      checkLoginStatus()
+    })
+    
+    return {
+      isLoggedIn,
+      user,
+      token,
+      activeMenu,
+      activeTab,
+      fileList,
+      dataList,
+      excelFiles,
+      chartContainer,
+      uploadRef,
+      uploadHeaderRow,
+      uploadPassword,
+      loginForm,
+      registerForm,
+      reportForm,
+      compareForm,
+      sheets1,
+      sheets2,
+      columns1,
+      columns2,
+      comparisonResult,
+      // 历史记录相关
+      historyForm,
+      historyList,
+      historyTotal,
+      historyPage,
+      historyLimit,
+      // 数据看板相关
+      dashboardStats,
+      trendChart,
+      distributionChart,
+      timeChart,
+      login,
+      register,
+      logout,
+      handleMenuSelect,
+      handleUploadSuccess,
+      handleUploadError,
+      submitUpload,
+      deleteData,
+      formatSize,
+      formatDate,
+      generateReport,
+      exportReport,
+      handleFile1Change,
+      handleFile2Change,
+      handleSheet1Change,
+      compareFiles,
+      formatRowData,
+      formatDifferenceType,
+      downloadReport,
+      previewFile,
+      previewDialogVisible,
+      previewData,
+      previewLoading,
+      previewParams,
+      previewNeedPassword,
+      handlePreviewParamsChange,
+      downloadFile,
+      isEncrypted,
+      // 历史记录方法
+      fetchHistoryList,
+      resetHistoryForm,
+      viewHistory,
+      rerunComparison,
+      deleteHistory,
+      handleSizeChange,
+      handleCurrentChange,
+      // 数据看板方法
+      fetchDashboardStats
+    }
+  }
+}
+</script>
+
+<style>
+#app {
+  font-family: Avenir, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #2c3e50;
+  min-height: 100vh;
+}
+
+.el-header {
+  background-color: #409EFF;
+  color: white;
+  height: 60px;
+  line-height: 60px;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.header-content h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.el-aside {
+  background-color: #f0f2f5;
+  height: calc(100vh - 60px);
+}
+
+.el-main {
+  padding: 20px;
+  background-color: #f9f9f9;
+}
+
+.login-register {
+  max-width: 400px;
+  margin: 100px auto;
+  padding: 20px;
+  border: 1px solid #eaeaea;
+  border-radius: 4px;
+  background-color: white;
+}
+
+.el-upload__tip {
+  margin-top: 10px;
+}
+</style>
