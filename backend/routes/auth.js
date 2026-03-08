@@ -30,7 +30,7 @@ router.post('/register', async (req, res) => {
     await user.save();
     
     // 生成token
-    const token = jwt.sign({ id: user._id }, 'secret', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user._id, role: user.role }, 'secret', { expiresIn: '7d' });
     
     res.json({ token, user: { id: user._id, username: user.username, email: user.email, role: user.role } });
   } catch (err) {
@@ -42,22 +42,22 @@ router.post('/register', async (req, res) => {
 // 登录
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
     
     // 检查用户是否存在
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ username });
     if (!user) {
-      return res.status(400).json({ msg: '邮箱或密码错误' });
+      return res.status(400).json({ msg: '用户名或密码错误' });
     }
     
     // 验证密码
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ msg: '邮箱或密码错误' });
+      return res.status(400).json({ msg: '用户名或密码错误' });
     }
     
     // 生成token
-    const token = jwt.sign({ id: user._id }, 'secret', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user._id, role: user.role }, 'secret', { expiresIn: '7d' });
     
     res.json({ token, user: { id: user._id, username: user.username, email: user.email, role: user.role } });
   } catch (err) {

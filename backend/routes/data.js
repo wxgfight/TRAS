@@ -282,7 +282,12 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
 // 获取文件列表
 router.get('/list', auth, async (req, res) => {
   try {
-    const data = await Data.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    const query = {};
+    // 如果不是管理员，只显示自己的数据
+    if (req.user.role !== 'admin') {
+      query.userId = req.user.id;
+    }
+    const data = await Data.find(query).sort({ createdAt: -1 });
     res.json(data);
   } catch (err) {
     console.error(err.message);
@@ -398,7 +403,7 @@ router.delete('/:id', auth, async (req, res) => {
     }
     
     // 检查文件是否属于当前用户
-    if (data.userId.toString() !== req.user.id) {
+    if (data.userId.toString() !== req.user.id && req.user.role !== 'admin') {
       return res.status(401).json({ msg: '无权删除此文件' });
     }
     

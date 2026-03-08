@@ -106,6 +106,11 @@ router.get('/columns/:id', auth, async (req, res) => {
     const data = await Data.findById(id);
     if (!data) return res.status(404).json({ msg: '文件不存在' });
     
+    // 检查权限
+    if (data.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(401).json({ msg: '无权访问此文件' });
+    }
+    
     let workbook;
     try {
       workbook = xlsx.readFile(data.path, password ? { password } : undefined);
@@ -141,6 +146,11 @@ router.post('/analyze', auth, async (req, res) => {
     
     const data = await Data.findById(fileId);
     if (!data) return res.status(404).json({ msg: '文件不存在' });
+    
+    // 检查权限
+    if (data.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(401).json({ msg: '无权访问此文件' });
+    }
     
     let workbook;
     try {
@@ -263,7 +273,11 @@ router.post('/analyze', auth, async (req, res) => {
 // 获取历史分析记录
 router.get('/history', auth, async (req, res) => {
   try {
-    const history = await Analysis.find({ userId: req.user.id })
+    const query = {};
+    if (req.user.role !== 'admin') {
+      query.userId = req.user.id;
+    }
+    const history = await Analysis.find(query)
       .populate('fileId', 'originalname')
       .sort({ createdAt: -1 });
     res.json(history);
@@ -280,6 +294,11 @@ router.post('/report', auth, async (req, res) => {
     
     const data = await Data.findById(fileId);
     if (!data) return res.status(404).json({ msg: '文件不存在' });
+    
+    // 检查权限
+    if (data.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(401).json({ msg: '无权访问此文件' });
+    }
     
     let workbook;
     try {

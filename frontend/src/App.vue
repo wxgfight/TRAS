@@ -471,38 +471,45 @@
         </el-main>
       </el-container>
     </el-container>
-    <div v-else class="login-register">
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="登录" name="login">
-          <el-form :model="loginForm" label-width="80px">
-            <el-form-item label="邮箱">
-              <el-input v-model="loginForm.email"></el-input>
-            </el-form-item>
-            <el-form-item label="密码">
-              <el-input v-model="loginForm.password" type="password"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="login">登录</el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-        <el-tab-pane label="注册" name="register">
-          <el-form :model="registerForm" label-width="80px">
-            <el-form-item label="用户名">
-              <el-input v-model="registerForm.username"></el-input>
-            </el-form-item>
-            <el-form-item label="邮箱">
-              <el-input v-model="registerForm.email"></el-input>
-            </el-form-item>
-            <el-form-item label="密码">
-              <el-input v-model="registerForm.password" type="password"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="register">注册</el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-      </el-tabs>
+    <div v-else class="login-container">
+      <div class="login-box">
+        <div class="login-header">
+          <img src="https://element-plus.org/images/element-plus-logo.svg" alt="logo" class="login-logo">
+          <h2>TRAS</h2>
+          <p>测试报告分析系统</p>
+        </div>
+        <el-tabs v-model="activeTab" stretch>
+          <el-tab-pane label="登录" name="login">
+            <el-form :model="loginForm" label-position="top" size="large">
+              <el-form-item label="用户名">
+                <el-input v-model="loginForm.username" placeholder="请输入用户名" prefix-icon="User"></el-input>
+              </el-form-item>
+              <el-form-item label="密码">
+                <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" prefix-icon="Lock" show-password @keyup.enter="login"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" class="login-btn" @click="login" :loading="loginLoading">登录</el-button>
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
+          <el-tab-pane label="注册" name="register">
+            <el-form :model="registerForm" label-position="top" size="large">
+              <el-form-item label="用户名">
+                <el-input v-model="registerForm.username" placeholder="请输入用户名" prefix-icon="User"></el-input>
+              </el-form-item>
+              <el-form-item label="邮箱">
+                <el-input v-model="registerForm.email" placeholder="请输入邮箱" prefix-icon="Message"></el-input>
+              </el-form-item>
+              <el-form-item label="密码">
+                <el-input v-model="registerForm.password" type="password" placeholder="请输入密码" prefix-icon="Lock" show-password></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="success" class="login-btn" @click="register" :loading="registerLoading">注册</el-button>
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
     </div>
   </div>
 </template>
@@ -510,7 +517,7 @@
 <script>
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import axios from 'axios'
-import { UploadFilled, Document, PieChart, Printer, Refresh } from '@element-plus/icons-vue'
+import { UploadFilled, Document, PieChart, Printer, Refresh, User, Lock, Message } from '@element-plus/icons-vue'
 import AnalysisPanel from './components/AnalysisPanel.vue'
 
 export default {
@@ -521,6 +528,9 @@ export default {
     PieChart,
     Printer,
     Refresh,
+    User,
+    Lock,
+    Message,
     AnalysisPanel
   },
   setup() {
@@ -531,6 +541,9 @@ export default {
     const activeTab = ref('login')
     const fileList = ref([])
     const dataList = ref([])
+    const loginLoading = ref(false)
+    const registerLoading = ref(false)
+    
     const excelFiles = computed(() => {
       return dataList.value.filter(file => 
         file.originalname.endsWith('.xlsx') || file.originalname.endsWith('.xls')
@@ -544,7 +557,7 @@ export default {
     const uploadPassword = ref('')
     
     const loginForm = ref({
-      email: '',
+      username: '',
       password: ''
     })
     
@@ -1448,6 +1461,8 @@ export default {
       fileList,
       dataList,
       excelFiles,
+      loginLoading,
+      registerLoading,
       chartContainer,
       uploadRef,
       uploadHeaderRowStart,
@@ -1555,13 +1570,59 @@ export default {
   background-color: #f9f9f9;
 }
 
-.login-register {
-  max-width: 400px;
-  margin: 100px auto;
-  padding: 20px;
-  border: 1px solid #eaeaea;
-  border-radius: 4px;
-  background-color: white;
+.login-container {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.login-box {
+  width: 400px;
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.login-logo {
+  width: 60px;
+  margin-bottom: 10px;
+}
+
+.login-header h2 {
+  margin: 10px 0 5px;
+  color: #333;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.login-header p {
+  color: #666;
+  margin: 0;
+  font-size: 14px;
+}
+
+.login-btn {
+  width: 100%;
+  height: 45px;
+  font-size: 16px;
+  margin-top: 10px;
+}
+
+.el-tabs__item {
+  font-size: 16px;
+  height: 45px;
+}
+
+.el-form-item__label {
+  font-weight: 500;
 }
 
 .el-upload__tip {

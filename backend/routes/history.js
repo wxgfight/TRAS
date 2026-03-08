@@ -8,10 +8,13 @@ router.get('/list', auth, async (req, res) => {
   try {
     const { page = 1, limit = 10, search, startDate, endDate, userId } = req.query;
     
-    const query = { userId: req.user.id };
+    const query = {};
     
-    // 管理员可以查看所有记录
-    if (req.user.role === 'admin' && userId) {
+    // 如果不是管理员，只能查看自己的记录
+    if (req.user.role !== 'admin') {
+      query.userId = req.user.id;
+    } else if (userId) {
+      // 管理员可以按特定用户筛选
       query.userId = userId;
     }
     
