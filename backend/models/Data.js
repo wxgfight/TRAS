@@ -26,6 +26,14 @@ const dataSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  projectName: {
+    type: String,
+    default: '默认项目'
+  },
+  reportName: {
+    type: String,
+    default: '默认报告'
+  },
   createdAt: {
     type: Date,
     default: Date.now

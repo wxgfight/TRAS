@@ -9,6 +9,16 @@ const pd = require('node-pandas');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 
+// 辅助函数：确保Sheet范围从第一列(A列)开始
+const ensureRangeStartsFromA = (sheet) => {
+  if (!sheet || !sheet['!ref']) return;
+  const range = xlsx.utils.decode_range(sheet['!ref']);
+  if (range.s.c > 0) {
+    range.s.c = 0;
+    sheet['!ref'] = xlsx.utils.encode_range(range);
+  }
+};
+
 // 智能主键推荐函数
 function recommendPrimaryKeys(columns) {
   const keywordPatterns = [
@@ -57,6 +67,10 @@ function handleNullValues(value, strategy = 'ignore') {
 
 // 数据类型转换函数
 function convertDataType(value) {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return value;
+  }
+  
   // 尝试转换为数字
   if (!isNaN(value) && value !== '') {
     return Number(value);
@@ -116,6 +130,299 @@ function convertDataType(value) {
       }
     });
 
+// 辅助函数：获取处理合并单元格后的多级表头 (复用 data.js 中的逻辑)
+const getHeaders = (sheet, startRow, endRow) => {
+  if (!sheet || !sheet['!ref']) return { headers: [], structure: [] };
+  const range = xlsx.utils.decode_range(sheet['!ref']);
+  const merges = sheet['!merges'] || [];
+  
+  if (endRow === undefined || endRow === null) {
+    endRow = startRow;
+  }
+  
+  if (startRow > endRow) {
+    const temp = startRow;
+    startRow = endRow;
+    endRow = temp;
+  }
+  
+  const headerMatrix = [];
+  
+  for (let R = startRow; R <= endRow; ++R) {
+    const rowValues = [];
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      let cellAddress = { c: C, r: R };
+      let cellRef = xlsx.utils.encode_cell(cellAddress);
+      let cell = sheet[cellRef];
+      let val = (cell && cell.v !== undefined) ? cell.v : null;
+      
+      if (val === null || val === '') {
+        const merge = merges.find(m => 
+          R >= m.s.r && R <= m.e.r &&
+          C >= m.s.c && C <= m.e.c
+        );
+        
+        if (merge) {
+          const startCellRef = xlsx.utils.encode_cell(merge.s);
+          const startCell = sheet[startCellRef];
+          if (startCell && startCell.v !== undefined) {
+            val = startCell.v;
+          }
+        }
+      }
+      
+      rowValues.push(val);
+    }
+    headerMatrix.push(rowValues);
+  }
+  
+  const headers = [];
+  const seenHeaders = {};
+  
+  const colCount = range.e.c - range.s.c + 1;
+  for (let C = 0; C < colCount; ++C) {
+    const parts = [];
+    for (let R = 0; R < headerMatrix.length; ++R) {
+      const val = headerMatrix[R][C];
+      if (val !== null && val !== '' && val !== undefined) {
+        const strVal = String(val).trim();
+        if (parts.length === 0 || parts[parts.length - 1] !== strVal) {
+             parts.push(strVal);
+        }
+      }
+    }
+    
+    let headerStr = parts.join('::');
+    
+    if (headerStr === '') {
+      headerStr = `__EMPTY_${range.s.c + C}`;
+    }
+    
+    if (seenHeaders[headerStr]) {
+      seenHeaders[headerStr]++;
+      headerStr = `${headerStr}_${seenHeaders[headerStr]}`;
+    } else {
+      seenHeaders[headerStr] = 1;
+    }
+    
+    headers.push(headerStr);
+  }
+  
+  return headers;
+};
+
+// 辅助函数：处理合并空表头 (并恢复多级表头结构)
+const mergeEmptyHeaders = (ws) => {
+  if (!ws || !ws['!ref']) return;
+  const range = xlsx.utils.decode_range(ws['!ref']);
+  const merges = ws['!merges'] || [];
+  
+  // 1. 先进行列合并（针对 __EMPTY, 0, 0_1 等）
+  let currentStartCol = -1;
+  let isMerging = false;
+
+  // 遍历第一行（表头行）
+  // 获取所有列名
+  const headers = [];
+  for (let C = range.s.c; C <= range.e.c; ++C) {
+    const cellRef = xlsx.utils.encode_cell({c: C, r: range.s.r});
+    const cell = ws[cellRef];
+    headers.push(cell ? cell.v : '');
+  }
+
+  // 检查是否有多级表头（包含 :: 分隔符）
+  const hasMultiLevel = headers.some(h => String(h).includes('::'));
+  
+  if (hasMultiLevel) {
+     // 计算最大层级深度
+     let maxDepth = 0;
+     const headerStructure = headers.map(h => {
+       const parts = String(h).split('::');
+       if (parts.length > maxDepth) maxDepth = parts.length;
+       return parts;
+     });
+     
+     // 如果有多级，需要向下移动数据，腾出表头空间
+     if (maxDepth > 1) {
+        const dataRange = xlsx.utils.decode_range(ws['!ref']);
+        // 移动数据：从最后一行开始向上移动
+        for (let R = dataRange.e.r; R > dataRange.s.r; --R) {
+           for (let C = dataRange.s.c; C <= dataRange.e.c; ++C) {
+              const fromRef = xlsx.utils.encode_cell({c: C, r: R});
+              const toRef = xlsx.utils.encode_cell({c: C, r: R + maxDepth - 1});
+              ws[toRef] = ws[fromRef];
+           }
+        }
+        
+        // 更新 range
+        ws['!ref'] = xlsx.utils.encode_range({
+           s: { c: dataRange.s.c, r: dataRange.s.r },
+           e: { c: dataRange.e.c, r: dataRange.e.r + maxDepth - 1 }
+        });
+        
+        // 填充多级表头
+        for (let C = 0; C < headers.length; ++C) {
+           const parts = headerStructure[C];
+           for (let level = 0; level < maxDepth; ++level) {
+              const cellRef = xlsx.utils.encode_cell({c: range.s.c + C, r: range.s.r + level});
+              let val = parts[level] || parts[parts.length - 1] || '';
+              
+              if (String(val).startsWith('__EMPTY') || String(val) === '0' || /^0_\d+$/.test(String(val))) {
+                  val = ''; 
+              }
+
+              ws[cellRef] = { v: val, t: 's' };
+           }
+        }
+        
+        // 应用合并逻辑（横向和纵向）
+        // 1. 横向合并
+        for (let level = 0; level < maxDepth; ++level) {
+           let mergeStart = -1;
+           let mergeVal = null;
+           
+           for (let C = range.s.c; C <= range.e.c; ++C) {
+              const cellRef = xlsx.utils.encode_cell({c: C, r: range.s.r + level});
+              const cell = ws[cellRef];
+              const val = cell ? cell.v : '';
+              
+              if (val === mergeVal && val !== '') {
+                 // 继续合并
+              } else {
+                 if (mergeStart !== -1 && (C - 1) > mergeStart) {
+                    merges.push({
+                       s: { r: range.s.r + level, c: mergeStart },
+                       e: { r: range.s.r + level, c: C - 1 }
+                    });
+                    for (let mC = mergeStart + 1; mC < C; ++mC) {
+                       const mRef = xlsx.utils.encode_cell({c: mC, r: range.s.r + level});
+                       if (ws[mRef]) ws[mRef].v = '';
+                    }
+                 }
+                 mergeStart = C;
+                 mergeVal = val;
+              }
+           }
+           if (mergeStart !== -1 && range.e.c > mergeStart) {
+              merges.push({
+                 s: { r: range.s.r + level, c: mergeStart },
+                 e: { r: range.s.r + level, c: range.e.c }
+              });
+               for (let mC = mergeStart + 1; mC <= range.e.c; ++mC) {
+                  const mRef = xlsx.utils.encode_cell({c: mC, r: range.s.r + level});
+                  if (ws[mRef]) ws[mRef].v = '';
+               }
+           }
+        }
+        
+        // 2. 纵向合并
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+            const parts = headerStructure[C - range.s.c];
+            const firstVal = parts[0];
+            if (firstVal && !String(firstVal).startsWith('__EMPTY') && firstVal !== '0') {
+                let mergeStartRow = -1;
+                let mergeVal = null;
+                
+                for (let level = 0; level < maxDepth; ++level) {
+                    const cellRef = xlsx.utils.encode_cell({c: C, r: range.s.r + level});
+                    const val = ws[cellRef] ? ws[cellRef].v : '';
+                    
+                    if (val === mergeVal && val !== '') {
+                       // 继续
+                    } else {
+                       if (mergeStartRow !== -1 && (level - 1) > mergeStartRow) {
+                          merges.push({
+                             s: { r: range.s.r + mergeStartRow, c: C },
+                             e: { r: range.s.r + level - 1, c: C }
+                          });
+                          for (let mR = mergeStartRow + 1; mR < level; ++mR) {
+                              const mRef = xlsx.utils.encode_cell({c: C, r: range.s.r + mR});
+                              if (ws[mRef]) ws[mRef].v = '';
+                          }
+                       }
+                       mergeStartRow = level;
+                       mergeVal = val;
+                    }
+                }
+                if (mergeStartRow !== -1 && (maxDepth - 1) > mergeStartRow) {
+                    merges.push({
+                       s: { r: range.s.r + mergeStartRow, c: C },
+                       e: { r: range.s.r + maxDepth - 1, c: C }
+                    });
+                    for (let mR = mergeStartRow + 1; mR < maxDepth; ++mR) {
+                        const mRef = xlsx.utils.encode_cell({c: C, r: range.s.r + mR});
+                        if (ws[mRef]) ws[mRef].v = '';
+                    }
+                }
+            }
+        }
+     } else {
+       // 单级表头，使用之前的逻辑
+       for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellRef = xlsx.utils.encode_cell({c: C, r: range.s.r});
+          const cell = ws[cellRef];
+          
+          let shouldMerge = false;
+          
+          if (cell && cell.v !== undefined) {
+             const val = String(cell.v).trim();
+             if (val.startsWith('__EMPTY') || val === '0' || val === '' || /^0_\d+$/.test(val)) {
+               shouldMerge = true;
+             }
+          } else {
+             shouldMerge = true;
+          }
+          
+          if (shouldMerge) {
+             if (!isMerging) {
+                if (C > range.s.c) {
+                   currentStartCol = C - 1;
+                   isMerging = true;
+                }
+             }
+          } else {
+             if (isMerging) {
+                if (currentStartCol >= range.s.c && (C - 1) > currentStartCol) {
+                    merges.push({
+                      s: { r: range.s.r, c: currentStartCol },
+                      e: { r: range.s.r, c: C - 1 }
+                    });
+                    for (let mC = currentStartCol + 1; mC < C; ++mC) {
+                        const mCellRef = xlsx.utils.encode_cell({c: mC, r: range.s.r});
+                        if (ws[mCellRef]) {
+                          ws[mCellRef].v = ''; 
+                          ws[mCellRef].t = 's';
+                        }
+                    }
+                }
+                isMerging = false;
+             }
+          }
+        }
+        
+        if (isMerging) {
+           if (currentStartCol >= range.s.c && range.e.c > currentStartCol) {
+              merges.push({
+                 s: { r: range.s.r, c: currentStartCol },
+                 e: { r: range.s.r, c: range.e.c }
+              });
+               for (let mC = currentStartCol + 1; mC <= range.e.c; ++mC) {
+                    const mCellRef = xlsx.utils.encode_cell({c: mC, r: range.s.r});
+                    if (ws[mCellRef]) {
+                      ws[mCellRef].v = '';
+                      ws[mCellRef].t = 's';
+                    }
+               }
+           }
+        }
+     }
+  }
+  
+  if (merges.length > 0) {
+    ws['!merges'] = merges;
+  }
+};
+
 // 对比两个文件
     router.post('/compare', auth, async (req, res) => {
       try {
@@ -126,7 +433,8 @@ function convertDataType(value) {
           sheet2, 
           primaryKeys = [], 
           ignoreColumns = [], 
-          headerRow = 0, 
+          headerRowStart = 0,
+          headerRowEnd = 0,
           nullValueStrategy = 'ignore',
           detectMoved = false,
           file1Password,
@@ -176,8 +484,14 @@ function convertDataType(value) {
         }
         
         // 获取指定sheet的数据
-        const sheet1Data = xlsx.utils.sheet_to_json(workbook1.Sheets[sheet1]);
-        const sheet2Data = xlsx.utils.sheet_to_json(workbook2.Sheets[sheet2]);
+        const ws1 = workbook1.Sheets[sheet1];
+        const ws2 = workbook2.Sheets[sheet2];
+        
+        ensureRangeStartsFromA(ws1);
+        ensureRangeStartsFromA(ws2);
+        
+        const sheet1Data = xlsx.utils.sheet_to_json(ws1, { header: getHeaders(ws1, headerRowStart, headerRowEnd), range: headerRowEnd + 1, defval: '' });
+        const sheet2Data = xlsx.utils.sheet_to_json(ws2, { header: getHeaders(ws2, headerRowStart, headerRowEnd), range: headerRowEnd + 1, defval: '' });
     
     // 获取列名
     const columns1 = Object.keys(sheet1Data[0] || {});
@@ -241,6 +555,7 @@ function convertDataType(value) {
     
     // 对比数据
     const differences = [];
+    const sameItems = [];
     
     // 检查删除的记录（file1中有，file2中没有）
     file1Rows.forEach(row1 => {
@@ -274,10 +589,13 @@ function convertDataType(value) {
         const row2 = file2Map.get(row1.__primaryKey);
         
         // 检查每行的差异
-        const rowDifferences = [];
-        filteredColumns1.forEach(column => {
-          if (row1[column] !== row2[column]) {
-            rowDifferences.push({
+      const rowDifferences = [];
+      filteredColumns1.forEach(column => {
+        // 跳过自动生成的空列名
+        if (column.startsWith('__EMPTY_')) return;
+        
+        if (row1[column] !== row2[column]) {
+          rowDifferences.push({
               column,
               oldValue: row1[column],
               newValue: row2[column]
@@ -306,6 +624,8 @@ function convertDataType(value) {
             rowData: row1,
             primaryKey: row1.__primaryKey
           });
+        } else {
+          sameItems.push(row1);
         }
       }
     });
@@ -370,18 +690,28 @@ function convertDataType(value) {
     xlsx.utils.book_append_sheet(reportWorkbook, detailsSheet, '差异详情列表');
     
     // 3. 新增项明细 Sheet
-    const addedItems = differences.filter(d => d.type === 'added').map(d => d.rowData);
+    const addedItems = differences.filter(d => d.type === 'added').map(d => {
+      // 移除内部字段
+      const { __primaryKey, __index, ...rest } = d.rowData;
+      return rest;
+    });
     if (addedItems.length > 0) {
       const addedSheet = xlsx.utils.json_to_sheet(addedItems);
+      mergeEmptyHeaders(addedSheet);
       xlsx.utils.book_append_sheet(reportWorkbook, addedSheet, '新增项明细');
     } else {
       xlsx.utils.book_append_sheet(reportWorkbook, xlsx.utils.aoa_to_sheet([['无新增项']]), '新增项明细');
     }
     
     // 4. 删除项明细 Sheet
-    const deletedItems = differences.filter(d => d.type === 'deleted').map(d => d.rowData);
+    const deletedItems = differences.filter(d => d.type === 'deleted').map(d => {
+      // 移除内部字段
+      const { __primaryKey, __index, ...rest } = d.rowData;
+      return rest;
+    });
     if (deletedItems.length > 0) {
       const deletedSheet = xlsx.utils.json_to_sheet(deletedItems);
+      mergeEmptyHeaders(deletedSheet);
       xlsx.utils.book_append_sheet(reportWorkbook, deletedSheet, '删除项明细');
     } else {
       xlsx.utils.book_append_sheet(reportWorkbook, xlsx.utils.aoa_to_sheet([['无删除项']]), '删除项明细');
@@ -391,16 +721,51 @@ function convertDataType(value) {
     const modifiedItems = differences.filter(d => d.type === 'modified').map(d => {
       const item = { '主键值': d.primaryKey };
       d.changes.forEach(c => {
-        item[`${c.column} (旧值)`] = c.oldValue;
-        item[`${c.column} (新值)`] = c.newValue;
+        // 处理表头合并逻辑：如果列名是自动生成的（__EMPTY_开头），则尝试与前一列合并显示
+        // 但在这里我们拿到的是已经解析好的列名，如果是自动生成的，说明原文件就是空的
+        // 用户需求是：某一列的 表头 如果为空，则与前面一列合并
+        // 这里我们在生成报告时，如果列名以 __EMPTY_ 开头，我们在展示时可以做特殊处理
+        // 或者，在更早的数据读取阶段处理表头
+        
+        // 实际上，xlsx.utils.json_to_sheet 会使用对象的 key 作为表头
+        // 我们可以在这里构造更有意义的 key
+        
+        let displayColumn = c.column;
+        if (displayColumn.startsWith('__EMPTY_')) {
+           // 尝试找到它的前一列（这需要知道列的顺序，目前 changes 数组不一定有序，且不包含所有列）
+           // 简单起见，我们直接保留原样，或者在数据读取时就处理好表头
+           // 更好的方式是在生成 sheet 之前，对 item 的 key 进行重命名
+        }
+        
+        item[`${displayColumn} (旧值)`] = c.oldValue;
+        item[`${displayColumn} (新值)`] = c.newValue;
       });
       return item;
     });
+    
+
+
     if (modifiedItems.length > 0) {
       const modifiedSheet = xlsx.utils.json_to_sheet(modifiedItems);
+      // 处理表头
+      mergeEmptyHeaders(modifiedSheet);
       xlsx.utils.book_append_sheet(reportWorkbook, modifiedSheet, '修改项对比');
     } else {
       xlsx.utils.book_append_sheet(reportWorkbook, xlsx.utils.aoa_to_sheet([['无修改项']]), '修改项对比');
+    }
+
+    // 6. 相同项明细 Sheet
+    if (sameItems.length > 0) {
+      // 移除内部字段
+      const cleanSameItems = sameItems.map(item => {
+        const { __primaryKey, __index, ...rest } = item;
+        return rest;
+      });
+      const sameSheet = xlsx.utils.json_to_sheet(cleanSameItems);
+      mergeEmptyHeaders(sameSheet);
+      xlsx.utils.book_append_sheet(reportWorkbook, sameSheet, '相同项明细');
+    } else {
+      xlsx.utils.book_append_sheet(reportWorkbook, xlsx.utils.aoa_to_sheet([['无相同项']]), '相同项明细');
     }
     
     // 写入文件
@@ -416,7 +781,8 @@ function convertDataType(value) {
       sheet2,
       primaryKey: finalPrimaryKeys,
       ignoreColumns,
-      headerRow,
+      headerRowStart,
+      headerRowEnd,
       nullStrategy: nullValueStrategy, // 注意字段名匹配
       stats: {
         file1Rows: file1Rows.length,
@@ -441,7 +807,8 @@ function convertDataType(value) {
       primaryKeys: finalPrimaryKeys,
       recommendedPrimaryKeys,
       ignoreColumns,
-      headerRow,
+      headerRowStart,
+      headerRowEnd,
       nullValueStrategy,
       detectMoved,
       differences,
@@ -458,6 +825,8 @@ function convertDataType(value) {
       try {
         const { id, sheet } = req.params;
         const password = req.query.password;
+        const headerRowStart = parseInt(req.query.headerRowStart) || 0;
+        const headerRowEnd = parseInt(req.query.headerRowEnd) !== undefined ? parseInt(req.query.headerRowEnd) : headerRowStart;
         
         const data = await Data.findById(id);
         
@@ -486,7 +855,10 @@ function convertDataType(value) {
            throw readError;
         }
         
-        const sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[sheet]);
+        const ws = workbook.Sheets[sheet];
+        ensureRangeStartsFromA(ws);
+        
+        const sheetData = xlsx.utils.sheet_to_json(ws, { header: getHeaders(ws, headerRowStart, headerRowEnd), range: headerRowEnd + 1, defval: '' });
         
         // 获取列名
         const columns = Object.keys(sheetData[0] || {});

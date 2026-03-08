@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build artifacts
+dist/
+backend/dist/
+backend/public/
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# User data and extra files
+backend/uploads/
+*.xlsx
+*.docx
+*.pdf
+*.txt
+*.exe
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

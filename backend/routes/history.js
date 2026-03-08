@@ -17,7 +17,9 @@ router.get('/list', auth, async (req, res) => {
     
     // 搜索条件
     if (search) {
-      // 这里可以根据实际需求添加搜索逻辑
+      // 可以在这里增加对文件名搜索的支持，但需要联表查询，比较复杂
+      // 这里暂时只支持对 remark 的搜索
+      query.remark = { $regex: search, $options: 'i' };
     }
     
     // 时间范围
@@ -112,7 +114,7 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(401).json({ msg: '无权删除此记录' });
     }
     
-    await comparison.remove();
+    await Comparison.deleteOne({ _id: req.params.id });
     res.json({ msg: '记录删除成功' });
   } catch (err) {
     console.error(err.message);
