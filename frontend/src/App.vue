@@ -45,41 +45,88 @@
         </el-aside>
         <el-main>
           <div v-if="activeMenu === 'upload'">
-            <el-upload
-              ref="uploadRef"
-              class="upload-demo"
-              action="/api/data/upload"
-              :headers="{ 'x-auth-token': token }"
-              :data="{ headerRowStart: uploadHeaderRowStart, headerRowEnd: uploadHeaderRowEnd, password: uploadPassword }"
-              :on-success="handleUploadSuccess"
-              :on-error="handleUploadError"
-              :auto-upload="false"
-              :file-list="fileList"
-              :limit="1"
-              accept=".csv,.xlsx,.xls,.json,.txt"
-            >
-              <el-button type="primary">选择文件</el-button>
-              <template #tip>
-                <div class="el-upload__tip">
-                  支持上传 CSV、Excel、JSON、TXT 文件，最大 50MB
+            <el-tabs v-model="activeUploadTab" type="border-card">
+              <el-tab-pane label="数据上传" name="dataUpload">
+                <el-upload
+                  ref="uploadRef"
+                  class="upload-demo"
+                  action="/api/data/upload"
+                  :headers="{ 'x-auth-token': token }"
+                  :data="{ headerRowStart: uploadHeaderRowStart, headerRowEnd: uploadHeaderRowEnd, password: uploadPassword }"
+                  :on-success="handleUploadSuccess"
+                  :on-error="handleUploadError"
+                  :auto-upload="false"
+                  :file-list="fileList"
+                  :limit="1"
+                  accept=".csv,.xlsx,.xls,.json,.txt"
+                >
+                  <el-button type="primary">选择文件</el-button>
+                  <template #tip>
+                    <div class="el-upload__tip">
+                      支持上传 CSV、Excel、JSON、TXT 文件，最大 50MB
+                    </div>
+                  </template>
+                </el-upload>
+                <div style="margin-top: 15px; margin-bottom: 15px;">
+                  <span style="margin-right: 10px;">表头行范围:</span>
+                  <el-input-number v-model="uploadHeaderRowStart" :min="0" :max="10" placeholder="起始行" controls-position="right" style="width: 100px;"></el-input-number>
+                  <span style="margin: 0 10px;">至</span>
+                  <el-input-number v-model="uploadHeaderRowEnd" :min="0" :max="10" placeholder="结束行" controls-position="right" style="width: 100px;"></el-input-number>
+                  <span style="margin-left: 10px; color: #909399; font-size: 12px;">(0表示第一行)</span>
                 </div>
-              </template>
-            </el-upload>
-            <div style="margin-top: 15px; margin-bottom: 15px;">
-              <span style="margin-right: 10px;">表头行范围:</span>
-              <el-input-number v-model="uploadHeaderRowStart" :min="0" :max="10" placeholder="起始行" controls-position="right" style="width: 100px;"></el-input-number>
-              <span style="margin: 0 10px;">至</span>
-              <el-input-number v-model="uploadHeaderRowEnd" :min="0" :max="10" placeholder="结束行" controls-position="right" style="width: 100px;"></el-input-number>
-              <span style="margin-left: 10px; color: #909399; font-size: 12px;">(0表示第一行)</span>
-            </div>
-            <div style="margin-top: 15px; margin-bottom: 15px;">
-              <span style="margin-right: 10px;">Excel密码:</span>
-              <el-input v-model="uploadPassword" placeholder="若文件加密请填写" style="width: 200px;" show-password></el-input>
-              <span style="margin-left: 10px; color: #909399; font-size: 12px;">(可选)</span>
-            </div>
-            <el-button type="success" @click="submitUpload">
-              开始上传
-            </el-button>
+                <div style="margin-top: 15px; margin-bottom: 15px;">
+                  <span style="margin-right: 10px;">Excel密码:</span>
+                  <el-input v-model="uploadPassword" placeholder="若文件加密请填写" style="width: 200px;" show-password></el-input>
+                  <span style="margin-left: 10px; color: #909399; font-size: 12px;">(可选)</span>
+                </div>
+                <el-button type="success" @click="submitUpload">
+                  开始上传
+                </el-button>
+              </el-tab-pane>
+              <el-tab-pane label="模板管理" name="templateManagement">
+                <div class="template-actions" style="margin-bottom: 20px;">
+                  <el-button type="primary" @click="templateUploadDialogVisible = true">上传模板</el-button>
+                </div>
+                <el-table :data="templateList" style="width: 100%">
+                  <el-table-column type="index" label="序号" width="80"></el-table-column>
+                  <el-table-column prop="originalname" label="模板名称"></el-table-column>
+                  <el-table-column prop="createdAt" label="更新时间" :formatter="formatDate"></el-table-column>
+                  <el-table-column label="操作" width="250">
+                    <template #default="scope">
+                      <el-button type="primary" size="small" @click="previewTemplate(scope.row)" v-if="scope.row.originalname.endsWith('.xlsx') || scope.row.originalname.endsWith('.xls')">预览</el-button>
+                      <el-button type="success" size="small" @click="downloadTemplate(scope.row)">下载</el-button>
+                      <el-button type="danger" size="small" @click="deleteTemplate(scope.row._id)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </el-tab-pane>
+            </el-tabs>
+
+            <!-- Template Upload Dialog -->
+            <el-dialog v-model="templateUploadDialogVisible" title="上传模板" width="30%">
+              <el-upload
+                ref="templateUploadRef"
+                class="upload-demo"
+                action="/api/template/upload"
+                :headers="{ 'x-auth-token': token }"
+                :on-success="handleTemplateUploadSuccess"
+                :on-error="handleTemplateUploadError"
+                :auto-upload="false"
+                :file-list="templateFileList"
+                :limit="1"
+                accept=".xlsx,.xls"
+              >
+                <template #trigger>
+                  <el-button type="primary">选择文件</el-button>
+                </template>
+                <el-button style="margin-left: 10px;" type="success" @click="submitTemplateUpload">上传到服务器</el-button>
+                <template #tip>
+                  <div class="el-upload__tip">
+                    只能上传 xlsx/xls 文件，且不超过 50MB
+                  </div>
+                </template>
+              </el-upload>
+            </el-dialog>
           </div>
           <div v-else-if="activeMenu === 'data'">
             <el-table :data="dataList" style="width: 100%">
@@ -110,91 +157,7 @@
               </el-table-column>
             </el-table>
             
-            <!-- 预览对话框 -->
-            <el-dialog 
-              v-model="previewDialogVisible" 
-              title="文件预览" 
-              width="90%" 
-              top="5vh"
-              class="preview-dialog"
-              destroy-on-close
-            >
-              <div v-if="previewData" class="preview-content">
-                <!-- 文件元数据 -->
-                <el-descriptions :column="4" border size="small" class="mb-4">
-                  <el-descriptions-item label="文件名">{{ previewData.filename }}</el-descriptions-item>
-                  <el-descriptions-item label="Sheet数量">{{ previewData.sheetCount || 1 }}</el-descriptions-item>
-                  <el-descriptions-item label="总行数">{{ previewData.totalRows }}</el-descriptions-item>
-                  <el-descriptions-item label="当前Sheet">{{ previewParams.sheet || '默认' }}</el-descriptions-item>
-                </el-descriptions>
 
-                <!-- 工具栏 -->
-                <div class="preview-toolbar">
-                  <div class="toolbar-left">
-                    <div class="toolbar-item" v-if="previewData.sheets && previewData.sheets.length > 0">
-                      <span class="label">Sheet:</span>
-                      <el-select v-model="previewParams.sheet" placeholder="选择Sheet" @change="handlePreviewParamsChange" size="default" style="width: 180px;">
-                        <el-option v-for="sheet in previewData.sheets" :key="sheet" :label="sheet" :value="sheet"></el-option>
-                      </el-select>
-                    </div>
-
-                    <div class="toolbar-item">
-                      <span class="label">表头范围:</span>
-                      <el-input-number v-model="previewParams.headerRowStart" :min="0" :max="10" size="default" @change="handlePreviewParamsChange" style="width: 100px;"></el-input-number>
-                      <span style="margin: 0 5px;">-</span>
-                      <el-input-number v-model="previewParams.headerRowEnd" :min="0" :max="10" size="default" @change="handlePreviewParamsChange" style="width: 100px;"></el-input-number>
-                    </div>
-                    
-                    <div class="toolbar-item">
-                      <span class="label">显示行数:</span>
-                      <el-select v-model="previewParams.limit" placeholder="行数" @change="handlePreviewParamsChange" size="default" style="width: 100px;">
-                        <el-option label="30行" :value="30"></el-option>
-                        <el-option label="50行" :value="50"></el-option>
-                        <el-option label="100行" :value="100"></el-option>
-                        <el-option label="200行" :value="200"></el-option>
-                      </el-select>
-                    </div>
-                  </div>
-
-                  <div class="toolbar-right">
-                    <div class="toolbar-item" v-if="previewNeedPassword">
-                      <span class="label error-text">需密码:</span>
-                      <el-input v-model="previewParams.password" type="password" placeholder="输入密码" size="default" style="width: 150px;" @keyup.enter="handlePreviewParamsChange" show-password></el-input>
-                      <el-button type="primary" size="default" @click="handlePreviewParamsChange">解锁</el-button>
-                    </div>
-                    <el-button type="primary" plain icon="Refresh" @click="handlePreviewParamsChange">刷新预览</el-button>
-                  </div>
-                </div>
-
-                <!-- 数据表格 -->
-                <el-table 
-                  :data="previewData.preview" 
-                  height="60vh" 
-                  border 
-                  stripe
-                  highlight-current-row
-                  v-loading="previewLoading"
-                  :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: 'bold' }"
-                >
-                  <el-table-column type="index" label="#" width="60" fixed></el-table-column>
-                  <el-table-column 
-                    v-for="(value, key) in (previewData.preview[0] || {})" 
-                    :key="key" 
-                    :prop="key" 
-                    :label="key"
-                    min-width="150"
-                    show-overflow-tooltip
-                  >
-                    <template #header>
-                      <div style="white-space: pre-wrap; line-height: 1.2;">{{ key.replace(/::/g, '\n') }}</div>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-              <div v-else v-loading="previewLoading" class="empty-preview">
-                <el-empty description="暂无预览数据" v-if="!previewLoading"></el-empty>
-              </div>
-            </el-dialog>
           </div>
           <div v-else-if="activeMenu === 'visualization'">
             <AnalysisPanel :excel-files="excelFiles" :token="token" />
@@ -468,6 +431,91 @@
               </el-card>
             </div>
           </div>
+            <!-- 预览对话框 -->
+            <el-dialog 
+              v-model="previewDialogVisible" 
+              title="文件预览" 
+              width="90%" 
+              top="5vh"
+              class="preview-dialog"
+              destroy-on-close
+            >
+              <div v-if="previewData" class="preview-content">
+                <!-- 文件元数据 -->
+                <el-descriptions :column="4" border size="small" class="mb-4">
+                  <el-descriptions-item label="文件名">{{ previewData.filename }}</el-descriptions-item>
+                  <el-descriptions-item label="Sheet数量">{{ previewData.sheetCount || 1 }}</el-descriptions-item>
+                  <el-descriptions-item label="总行数">{{ previewData.totalRows }}</el-descriptions-item>
+                  <el-descriptions-item label="当前Sheet">{{ previewParams.sheet || '默认' }}</el-descriptions-item>
+                </el-descriptions>
+
+                <!-- 工具栏 -->
+                <div class="preview-toolbar">
+                  <div class="toolbar-left">
+                    <div class="toolbar-item" v-if="previewData.sheets && previewData.sheets.length > 0">
+                      <span class="label">Sheet:</span>
+                      <el-select v-model="previewParams.sheet" placeholder="选择Sheet" @change="handlePreviewParamsChange" size="default" style="width: 180px;">
+                        <el-option v-for="sheet in previewData.sheets" :key="sheet" :label="sheet" :value="sheet"></el-option>
+                      </el-select>
+                    </div>
+
+                    <div class="toolbar-item">
+                      <span class="label">表头范围:</span>
+                      <el-input-number v-model="previewParams.headerRowStart" :min="0" :max="10" size="default" @change="handlePreviewParamsChange" style="width: 100px;"></el-input-number>
+                      <span style="margin: 0 5px;">-</span>
+                      <el-input-number v-model="previewParams.headerRowEnd" :min="0" :max="10" size="default" @change="handlePreviewParamsChange" style="width: 100px;"></el-input-number>
+                    </div>
+                    
+                    <div class="toolbar-item">
+                      <span class="label">显示行数:</span>
+                      <el-select v-model="previewParams.limit" placeholder="行数" @change="handlePreviewParamsChange" size="default" style="width: 100px;">
+                        <el-option label="30行" :value="30"></el-option>
+                        <el-option label="50行" :value="50"></el-option>
+                        <el-option label="100行" :value="100"></el-option>
+                        <el-option label="200行" :value="200"></el-option>
+                      </el-select>
+                    </div>
+                  </div>
+
+                  <div class="toolbar-right">
+                    <div class="toolbar-item" v-if="previewNeedPassword">
+                      <span class="label error-text">需密码:</span>
+                      <el-input v-model="previewParams.password" type="password" placeholder="输入密码" size="default" style="width: 150px;" @keyup.enter="handlePreviewParamsChange" show-password></el-input>
+                      <el-button type="primary" size="default" @click="handlePreviewParamsChange">解锁</el-button>
+                    </div>
+                    <el-button type="primary" plain icon="Refresh" @click="handlePreviewParamsChange">刷新预览</el-button>
+                  </div>
+                </div>
+
+                <!-- 数据表格 -->
+                <el-table 
+                  :data="previewData.preview" 
+                  height="60vh" 
+                  border 
+                  stripe
+                  highlight-current-row
+                  v-loading="previewLoading"
+                  :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: 'bold' }"
+                >
+                  <el-table-column type="index" label="#" width="60" fixed></el-table-column>
+                  <el-table-column 
+                    v-for="(value, key) in (previewData.preview[0] || {})" 
+                    :key="key" 
+                    :prop="key" 
+                    :label="key"
+                    min-width="150"
+                    show-overflow-tooltip
+                  >
+                    <template #header>
+                      <div style="white-space: pre-wrap; line-height: 1.2;">{{ key.replace(/::/g, '\n') }}</div>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+              <div v-else v-loading="previewLoading" class="empty-preview">
+                <el-empty description="暂无预览数据" v-if="!previewLoading"></el-empty>
+              </div>
+            </el-dialog>
         </el-main>
       </el-container>
     </el-container>
@@ -538,9 +586,15 @@ export default {
     const user = ref({})
     const token = ref('')
     const activeMenu = ref('upload')
+    const activeUploadTab = ref('dataUpload')
     const activeTab = ref('login')
     const fileList = ref([])
     const dataList = ref([])
+    const templateList = ref([])
+    const templateUploadDialogVisible = ref(false)
+    const templateFileList = ref([])
+    const templateUploadRef = ref(null)
+    const isPreviewingTemplate = ref(false)
     const loginLoading = ref(false)
     const registerLoading = ref(false)
     
@@ -693,9 +747,108 @@ export default {
         fetchHistoryList()
       } else if (key === 'dashboard') {
         fetchDashboardStats()
+      } else if (key === 'upload') {
+        if (activeUploadTab.value === 'templateManagement') {
+          fetchTemplateList()
+        }
       }
     }
     
+    // 监听 activeUploadTab 变化
+    watch(activeUploadTab, (newVal) => {
+      if (newVal === 'templateManagement') {
+        fetchTemplateList()
+      }
+    })
+
+    // 获取模板列表
+    const fetchTemplateList = async () => {
+      try {
+        const response = await axios.get('/api/template/list', {
+            headers: { 'x-auth-token': token.value }
+        })
+        templateList.value = response.data
+      } catch (error) {
+        console.error('获取模板列表失败:', error)
+      }
+    }
+
+    // 模板上传处理
+    const handleTemplateUploadSuccess = (response) => {
+      // alert('模板上传成功')
+      templateFileList.value = []
+      templateUploadDialogVisible.value = false
+      fetchTemplateList()
+    }
+    
+    const handleTemplateUploadError = (error) => {
+      console.error('模板上传失败:', error)
+      alert('模板上传失败: ' + (error.response?.data?.msg || '服务器错误'))
+    }
+
+    const submitTemplateUpload = () => {
+      if (templateUploadRef.value) {
+        templateUploadRef.value.submit()
+      }
+    }
+
+    // 删除模板
+    const deleteTemplate = async (id) => {
+      if (confirm('确定要删除这个模板吗？')) {
+        try {
+          await axios.delete(`/api/template/${id}`, {
+            headers: { 'x-auth-token': token.value }
+          })
+          fetchTemplateList()
+        } catch (error) {
+          console.error('删除模板失败:', error)
+          alert('删除模板失败')
+        }
+      }
+    }
+
+    // 下载模板
+    const downloadTemplate = async (template) => {
+      try {
+        const response = await axios.get(`/api/template/download/${template._id}`, {
+          headers: { 'x-auth-token': token.value },
+          responseType: 'blob'
+        })
+        
+        const url = window.URL.createObjectURL(new Blob([response.data]))
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', template.originalname)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+      } catch (error) {
+        console.error('下载模板失败:', error)
+        alert('下载模板失败')
+      }
+    }
+
+    // 预览模板
+    const previewTemplate = async (template) => {
+      previewDialogVisible.value = true
+      previewLoading.value = true
+      previewData.value = null
+      currentPreviewFileId.value = template._id
+      previewNeedPassword.value = false
+      isPreviewingTemplate.value = true
+      
+      previewParams.value = {
+        sheet: '',
+        headerRowStart: 0,
+        headerRowEnd: 0,
+        limit: 30,
+        password: ''
+      }
+      
+      await fetchPreviewData()
+    }
+
     // 处理文件上传成功
     const handleUploadSuccess = (response) => {
       // alert('上传成功') // 移除成功提示
@@ -921,11 +1074,13 @@ export default {
       previewData.value = null
       currentPreviewFileId.value = file._id
       previewNeedPassword.value = false
+      isPreviewingTemplate.value = false
       
       // 重置参数
       previewParams.value = {
         sheet: '',
-        headerRow: file.metadata?.headerRow || 0,
+        headerRowStart: file.metadata?.headerRowStart || 0,
+        headerRowEnd: file.metadata?.headerRowEnd !== undefined ? file.metadata.headerRowEnd : (file.metadata?.headerRowStart || 0),
         limit: 30,
         password: ''
       }
@@ -950,7 +1105,8 @@ export default {
           params.password = previewParams.value.password
         }
 
-        const response = await axios.get(`/api/data/preview/${currentPreviewFileId.value}`, {
+        const baseUrl = isPreviewingTemplate.value ? '/api/template/preview' : '/api/data/preview'
+        const response = await axios.get(`${baseUrl}/${currentPreviewFileId.value}`, {
           headers: {
             'x-auth-token': token.value
           },
@@ -1513,6 +1669,19 @@ export default {
       handlePreviewParamsChange,
       downloadFile,
       isEncrypted,
+      templateList,
+      templateUploadDialogVisible,
+      templateFileList,
+      templateUploadRef,
+      activeUploadTab,
+      fetchTemplateList,
+      handleTemplateUploadSuccess,
+      handleTemplateUploadError,
+      submitTemplateUpload,
+      deleteTemplate,
+      downloadTemplate,
+      previewTemplate,
+      
       // 历史记录方法
       fetchHistoryList,
       resetHistoryForm,

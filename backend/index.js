@@ -8,6 +8,7 @@ const compareRoutes = require('./routes/compare');
 const historyRoutes = require('./routes/history');
 const dashboardRoutes = require('./routes/dashboard');
 const analysisRoutes = require('./routes/analysis');
+const templateRoutes = require('./routes/template');
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/compare', compareRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/template', templateRoutes);
 
 // 全局错误处理中间件
 app.use((err, req, res, next) => {
