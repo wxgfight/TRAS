@@ -5,7 +5,15 @@ import path from 'path'
 export default defineConfig({
   plugins: [vue()],
   server: {
-    port: 5174
+    host: '0.0.0.0',
+    port: 5174,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:6060',
+        changeOrigin: true,
+        secure: false
+      }
+    }
   },
   build: {
     outDir: path.resolve(__dirname, 'dist'),
