@@ -5,7 +5,7 @@ const Comparison = require('../models/Comparison');
 const auth = require('../middleware/auth');
 const xlsx = require('xlsx');
 const path = require('path');
-const pd = require('node-pandas');
+// const pd = require('node-pandas'); // unused
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 
@@ -425,6 +425,7 @@ const mergeEmptyHeaders = (ws) => {
 
 // 对比两个文件
     router.post('/compare', auth, async (req, res) => {
+      console.log('Received compare request:', req.body);
       try {
         const { 
           file1Id, 
@@ -464,6 +465,7 @@ const mergeEmptyHeaders = (ws) => {
         }
         
         // 读取Excel文件
+        console.log('Reading file 1:', file1.path);
         let workbook1, workbook2;
         try {
           workbook1 = xlsx.readFile(file1.path, file1Password ? { password: file1Password } : undefined);
@@ -475,6 +477,7 @@ const mergeEmptyHeaders = (ws) => {
         }
 
         try {
+          console.log('Reading file 2:', file2.path);
           workbook2 = xlsx.readFile(file2.path, file2Password ? { password: file2Password } : undefined);
         } catch (readError) {
            if (readError.message.includes('Password') || readError.message.includes('encrypted')) {
@@ -487,6 +490,7 @@ const mergeEmptyHeaders = (ws) => {
         const ws1 = workbook1.Sheets[sheet1];
         const ws2 = workbook2.Sheets[sheet2];
         
+        console.log('Processing sheets...');
         ensureRangeStartsFromA(ws1);
         ensureRangeStartsFromA(ws2);
         
@@ -769,6 +773,11 @@ const mergeEmptyHeaders = (ws) => {
     }
     
     // 写入文件
+    console.log('Generating report at:', reportPath);
+    const reportDir = path.dirname(reportPath);
+    if (!fs.existsSync(reportDir)) {
+      fs.mkdirSync(reportDir, { recursive: true });
+    }
     xlsx.writeFile(reportWorkbook, reportPath);
     
     // 保存对比记录到数据库
@@ -815,8 +824,8 @@ const mergeEmptyHeaders = (ws) => {
       reportPath
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('服务器错误');
+    console.error('File comparison error:', err);
+    res.status(500).json({ msg: '服务器错误: ' + err.message });
   }
 });
 

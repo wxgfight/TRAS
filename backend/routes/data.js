@@ -6,6 +6,7 @@ const multer = require('multer');
 const path = require('path');
 const xlsx = require('xlsx');
 const fs = require('fs');
+const mongoose = require('mongoose');
 
 // 辅助函数：获取处理合并单元格后的多级表头
 const getHeaders = (sheet, startRow, endRow) => {
@@ -159,7 +160,7 @@ const upload = multer({
 //   fs.mkdirSync('uploads');
 // }
 
-// 上传文件
+// 上传文件（需要认证）
 router.post('/upload', auth, upload.single('file'), async (req, res) => {
   try {
     const { filename, originalname, path: filePath, size, mimetype } = req.file;
@@ -414,6 +415,60 @@ router.delete('/:id', auth, async (req, res) => {
     
     await Data.findByIdAndDelete(req.params.id);
     res.json({ msg: '文件删除成功' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('服务器错误');
+  }
+});
+
+// 系统状态检查
+router.get('/status', async (req, res) => {
+  try {
+    // 检查数据库连接状态
+    const dbState = mongoose.connection.readyState;
+    const dbConnected = dbState === 1;
+    
+    res.json({
+      status: 'ok',
+      dbConnected,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.json({
+      status: 'error',
+      dbConnected: false,
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// 上传文件（不需要认证，用于测试报告分析）
+router.post('/upload/public', upload.single('report'), async (req, res) => {
+  try {
+    const { filename, originalname, path: filePath, size, mimetype } = req.file;
+    
+    // 确保originalname也使用正确的编码
+    const decodedOriginalname = Buffer.from(originalname, 'latin1').toString('utf8');
+    
+    // 模拟分析结果
+    const analysisResult = {
+      total: 100,
+      passed: 85,
+      failed: 10,
+      skipped: 3,
+      errors: 2,
+      details: [
+        { name: '测试用例1', status: 'passed', message: '测试通过' },
+        { name: '测试用例2', status: 'failed', message: '测试失败' },
+        { name: '测试用例3', status: 'skipped', message: '测试跳过' },
+        { name: '测试用例4', status: 'passed', message: '测试通过' },
+        { name: '测试用例5', status: 'error', message: '测试错误' }
+      ]
+    };
+    
+    res.json(analysisResult);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('服务器错误');

@@ -157,7 +157,7 @@ export default {
     // 获取历史记录
     const fetchHistory = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/analysis/history', {
+        const response = await axios.get('/api/analysis/history', {
           headers: { 'x-auth-token': props.token }
         })
         history.value = response.data
@@ -194,7 +194,7 @@ export default {
         if (sheet) params.sheet = sheet
         if (form.value.password) params.password = form.value.password
         
-        const response = await axios.get(`http://localhost:5000/api/analysis/columns/${fileId}`, {
+        const response = await axios.get(`/api/analysis/columns/${fileId}`, {
           headers: { 'x-auth-token': props.token },
           params
         })
@@ -234,7 +234,7 @@ export default {
       
       loading.value = true
       try {
-        const response = await axios.post('http://localhost:5000/api/analysis/analyze', form.value, {
+        const response = await axios.post('/api/analysis/analyze', form.value, {
           headers: { 'x-auth-token': props.token }
         })
         
@@ -267,7 +267,7 @@ export default {
       
       reportLoading.value = true
       try {
-        const response = await axios.post('http://localhost:5000/api/analysis/report', {
+        const response = await axios.post('/api/analysis/report', {
           fileId: form.value.fileId,
           sheet: form.value.sheet,
           password: form.value.password

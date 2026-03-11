@@ -48,7 +48,7 @@
             <el-upload
               ref="uploadRef"
               class="upload-demo"
-              action="http://localhost:5000/api/data/upload"
+              action="/api/data/upload"
               :headers="{ 'x-auth-token': token }"
               :data="{ headerRowStart: uploadHeaderRowStart, headerRowEnd: uploadHeaderRowEnd, password: uploadPassword }"
               :on-success="handleUploadSuccess"
@@ -642,7 +642,7 @@ export default {
     // 登录
     const login = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/auth/login', loginForm.value)
+        const response = await axios.post('/api/auth/login', loginForm.value)
         localStorage.setItem('token', response.data.token)
         localStorage.setItem('user', JSON.stringify(response.data.user))
         token.value = response.data.token
@@ -658,7 +658,7 @@ export default {
     // 注册
     const register = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/auth/register', registerForm.value)
+        const response = await axios.post('/api/auth/register', registerForm.value)
         localStorage.setItem('token', response.data.token)
         localStorage.setItem('user', JSON.stringify(response.data.user))
         token.value = response.data.token
@@ -734,7 +734,7 @@ export default {
     // 获取数据列表
     const fetchDataList = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/data/list', {
+        const response = await axios.get('/api/data/list', {
           headers: {
             'x-auth-token': token.value
           }
@@ -750,7 +750,7 @@ export default {
       if (confirm('确定要删除这个文件吗？')) {
         try {
           console.log('删除文件ID:', id)
-          await axios.delete(`http://localhost:5000/api/data/${id}`, {
+          await axios.delete(`/api/data/${id}`, {
             headers: {
               'x-auth-token': token.value
             }
@@ -892,7 +892,7 @@ export default {
     // 下载报表
     const downloadReport = async (taskId) => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/compare/report/${taskId}`, {
+        const response = await axios.get(`/api/compare/report/${taskId}`, {
           headers: {
             'x-auth-token': token.value
           },
@@ -950,7 +950,7 @@ export default {
           params.password = previewParams.value.password
         }
 
-        const response = await axios.get(`http://localhost:5000/api/data/preview/${currentPreviewFileId.value}`, {
+        const response = await axios.get(`/api/data/preview/${currentPreviewFileId.value}`, {
           headers: {
             'x-auth-token': token.value
           },
@@ -987,7 +987,7 @@ export default {
     // 下载文件
     const downloadFile = async (file) => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/data/download/${file._id}`, {
+        const response = await axios.get(`/api/data/download/${file._id}`, {
           headers: {
             'x-auth-token': token.value
           },
@@ -1043,7 +1043,7 @@ export default {
           params.password = compareForm.value.file1Password
         }
         
-        const response = await axios.get(`http://localhost:5000/api/compare/sheets/${fileId}`, {
+        const response = await axios.get(`/api/compare/sheets/${fileId}`, {
           headers: {
             'x-auth-token': token.value
           },
@@ -1096,7 +1096,7 @@ export default {
           params.password = compareForm.value.file2Password
         }
 
-        const response = await axios.get(`http://localhost:5000/api/compare/sheets/${fileId}`, {
+        const response = await axios.get(`/api/compare/sheets/${fileId}`, {
           headers: {
             'x-auth-token': token.value
           },
@@ -1139,7 +1139,7 @@ export default {
           params.password = compareForm.value.file1Password
         }
         
-        const response = await axios.get(`http://localhost:5000/api/compare/columns/${fileId}/${encodeURIComponent(sheet)}`, {
+        const response = await axios.get(`/api/compare/columns/${fileId}/${encodeURIComponent(sheet)}`, {
           headers: {
             'x-auth-token': token.value
           },
@@ -1168,7 +1168,7 @@ export default {
           params.endDate = historyForm.value.dateRange[1]
         }
         
-        const response = await axios.get('http://localhost:5000/api/history/list', {
+        const response = await axios.get('/api/history/list', {
           headers: {
             'x-auth-token': token.value
           },
@@ -1195,7 +1195,7 @@ export default {
     // 查看历史记录
     const viewHistory = async (id) => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/history/${id}`, {
+        const response = await axios.get(`/api/history/${id}`, {
           headers: {
             'x-auth-token': token.value
           }
@@ -1222,7 +1222,7 @@ export default {
     // 获取数据看板数据
     const fetchDashboardStats = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/dashboard/stats', {
+        const response = await axios.get('/api/dashboard/stats', {
           headers: {
             'x-auth-token': token.value
           }
@@ -1403,7 +1403,7 @@ export default {
     // 对比文件
     const compareFiles = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/compare/compare', compareForm.value, {
+        const response = await axios.post('/api/compare/compare', compareForm.value, {
           headers: {
             'x-auth-token': token.value
           }

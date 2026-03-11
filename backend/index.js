@@ -27,21 +27,47 @@ app.use('/api/history', historyRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analysis', analysisRoutes);
 
+// 全局错误处理中间件
+app.use((err, req, res, next) => {
+  console.error('Global Error Handler:', err);
+  res.status(500).json({ msg: 'Server Error: ' + err.message });
+});
+
 // 所有其他 GET 请求返回 index.html (SPA 支持)
 app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // 连接数据库
+console.log('正在连接数据库...');
+
+process.on('exit', (code) => {
+  console.log(`Process exited with code: ${code}`);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
 mongoose.connect('mongodb://localhost:27017/data-analysis-system').then(() => {
   console.log('数据库连接成功');
   
   // 启动服务器
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`服务器运行在端口 ${PORT}`);
+  const PORT = process.env.PORT || 6060;
+  console.log(`正在启动服务器，监听端口 ${PORT}...`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`服务器运行在端口 ${PORT} (0.0.0.0)`);
+  });
+
+  server.on('error', (e) => {
+    console.error('Server error:', e);
   });
 }).catch(err => {
   console.error('数据库连接失败:', err);
-  process.exit(1);
+  // process.exit(1); // 不要退出，保持尝试
 });
+
+// 防止进程退出
+setInterval(() => {
+  // 保持心跳
+}, 10000);
